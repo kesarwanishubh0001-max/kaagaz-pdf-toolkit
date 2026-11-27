@@ -21,7 +21,8 @@ jobs:
         with:
           node-version: 20
 
-      - name: Setup Java 21 (Required for Latest Android Gradle)
+      - name: Setup Java 21
+        id: setup-java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -41,14 +42,12 @@ jobs:
           const fs = require('fs');
           const path = require('path');
 
-          // 1. Remove AI Studio online importmap
           if (fs.existsSync('index.html')) {
             let html = fs.readFileSync('index.html', 'utf8');
             html = html.replace(/<script\s+type=["']importmap["'][\s\S]*?<\/script>/gi, '');
             fs.writeFileSync('index.html', html);
           }
 
-          // 2. Replace BrowserRouter with HashRouter
           function walkAll(dir) {
             for (const file of fs.readdirSync(dir)) {
               if (['node_modules', '.git', 'dist', 'release', 'electron', 'android'].includes(file)) continue;
@@ -68,15 +67,20 @@ jobs:
       - name: Build Web Assets
         run: npx vite build --base=./
 
-      - name: Clean Old Capacitor Config & Build Android APK
+      - name: Build Android APK with Forced Java 21
+        env:
+          JAVA_HOME: ${{ steps.setup-java.outputs.path }}
         run: |
+          export PATH="$JAVA_HOME/bin:$PATH"
+          java -version
           rm -rf android capacitor.config.json capacitor.config.ts
           npx cap init "Kaagaz" "com.kaagaz.pdftoolkit" --web-dir=dist
           npx cap add android
           npx cap sync android
+          echo "org.gradle.java.home=$JAVA_HOME" >> android/gradle.properties
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --no-daemon
           cp app/build/outputs/apk/debug/app-debug.apk ../Kaagaz-Offline.apk
 
       - name: Publish APK to GitHub Releases
