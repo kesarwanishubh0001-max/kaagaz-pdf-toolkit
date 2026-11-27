@@ -21,11 +21,11 @@ jobs:
         with:
           node-version: 20
 
-      - name: Setup Java 17 (Required for Android APK)
+      - name: Setup Java 21 (Required for Latest Android Gradle)
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -68,8 +68,9 @@ jobs:
       - name: Build Web Assets
         run: npx vite build --base=./
 
-      - name: Initialize & Build Android APK
+      - name: Clean Old Capacitor Config & Build Android APK
         run: |
+          rm -rf android capacitor.config.json capacitor.config.ts
           npx cap init "Kaagaz" "com.kaagaz.pdftoolkit" --web-dir=dist
           npx cap add android
           npx cap sync android
