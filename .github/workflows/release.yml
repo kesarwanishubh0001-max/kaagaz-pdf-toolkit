@@ -26,12 +26,14 @@ jobs:
           npm install --legacy-peer-deps
           npm install --save-dev electron electron-builder --legacy-peer-deps
 
-      - name: Configure Offline Paths & Package.json
+      - name: Auto-Fix White Screen & Configure Offline Paths
         shell: node {0}
         run: |
           const fs = require('fs');
+          const path = require('path');
+
           const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-          pkg.version = '1.0.0';
+          pkg.version = '1.0.1';
           pkg.main = 'electron/main.cjs';
           pkg.build = {
             appId: 'com.kaagaz.pdftoolkit',
@@ -45,21 +47,41 @@ jobs:
           };
           fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
 
+          // Force relative base path in vite.config
           for (const cfg of ['vite.config.ts', 'vite.config.js']) {
             if (fs.existsSync(cfg)) {
               let content = fs.readFileSync(cfg, 'utf8');
-              if (!content.includes("base:")) {
-                content = content.replace(/defineConfig\s*\(\s*\{/, "defineConfig({\n  base: './',");
-                fs.writeFileSync(cfg, content);
+              if (content.includes('base:')) {
+                content = content.replace(/base:\s*['"][^'"]*['"]/, "base: './'");
+              } else {
+                content = content.replace(/defineConfig\s*\(\s*(\([^)]*\)\s*=>\s*)?\{/, (m) => `${m}\n  base: './',`);
+              }
+              fs.writeFileSync(cfg, content);
+            }
+          }
+
+          // Replace BrowserRouter with HashRouter in src files if present
+          function walkDir(dir) {
+            if (!fs.existsSync(dir)) return;
+            for (const file of fs.readdirSync(dir)) {
+              const full = path.join(dir, file);
+              if (fs.statSync(full).isDirectory()) walkDir(full);
+              else if (/\.(tsx|ts|jsx|js)$/.test(file)) {
+                let code = fs.readFileSync(full, 'utf8');
+                if (code.includes('BrowserRouter')) {
+                  code = code.replace(/BrowserRouter/g, 'HashRouter');
+                  fs.writeFileSync(full, code);
+                }
               }
             }
           }
+          walkDir('src');
 
       - name: Build Web & Windows EXE
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: |
-          npx vite build
+          npx vite build --base=./
           npx electron-builder --win portable nsis --publish never
 
       - name: Publish EXE to GitHub Releases
