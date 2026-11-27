@@ -1,0 +1,89 @@
+name: Build Offline Kaagaz Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Java 17 (Required for Android APK)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Dependencies & Capacitor
+        run: |
+          npm install --legacy-peer-deps
+          npm install @capacitor/core @capacitor/cli @capacitor/android --legacy-peer-deps
+
+      - name: Prepare Web Build for Mobile Offline
+        shell: node {0}
+        run: |
+          const fs = require('fs');
+          const path = require('path');
+
+          // 1. Remove AI Studio online importmap
+          if (fs.existsSync('index.html')) {
+            let html = fs.readFileSync('index.html', 'utf8');
+            html = html.replace(/<script\s+type=["']importmap["'][\s\S]*?<\/script>/gi, '');
+            fs.writeFileSync('index.html', html);
+          }
+
+          // 2. Replace BrowserRouter with HashRouter
+          function walkAll(dir) {
+            for (const file of fs.readdirSync(dir)) {
+              if (['node_modules', '.git', 'dist', 'release', 'electron', 'android'].includes(file)) continue;
+              const full = path.join(dir, file);
+              if (fs.statSync(full).isDirectory()) walkAll(full);
+              else if (/\.(tsx|ts|jsx|js)$/.test(file)) {
+                let code = fs.readFileSync(full, 'utf8');
+                if (code.includes('BrowserRouter')) {
+                  code = code.replace(/BrowserRouter/g, 'HashRouter');
+                  fs.writeFileSync(full, code);
+                }
+              }
+            }
+          }
+          walkAll('.');
+
+      - name: Build Web Assets
+        run: npx vite build --base=./
+
+      - name: Initialize & Build Android APK
+        run: |
+          npx cap init "Kaagaz" "com.kaagaz.pdftoolkit" --web-dir=dist
+          npx cap add android
+          npx cap sync android
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk ../Kaagaz-Offline.apk
+
+      - name: Publish APK to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-v1.0.${{ github.run_number }}
+          name: Kaagaz Android APK v1.0.${{ github.run_number }} (100% Offline)
+          draft: false
+          prerelease: false
+          files: |
+            Kaagaz-Offline.apk
