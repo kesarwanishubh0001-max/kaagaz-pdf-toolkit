@@ -31,13 +31,17 @@ jobs:
         run: |
           const fs = require('fs');
           const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          pkg.version = '1.0.0';
           pkg.main = 'electron/main.cjs';
           pkg.build = {
             appId: 'com.kaagaz.pdftoolkit',
             productName: 'Kaagaz',
             directories: { output: 'release' },
             files: ['dist/**/*', 'electron/**/*', 'package.json'],
-            win: { target: ['portable', 'nsis'] }
+            win: {
+              target: ['portable', 'nsis'],
+              signAndEditExecutable: false
+            }
           };
           fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
 
@@ -52,9 +56,11 @@ jobs:
           }
 
       - name: Build Web & Windows EXE
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
         run: |
-          npm run build
-          npx electron-builder --win portable nsis
+          npx vite build
+          npx electron-builder --win portable nsis --publish never
 
       - name: Publish EXE to GitHub Releases
         uses: softprops/action-gh-release@v2
