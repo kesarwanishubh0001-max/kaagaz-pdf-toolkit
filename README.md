@@ -1,4 +1,4 @@
-# 📄 Kaagaz — Offline-First PDF Toolkit, Universal Reader & AI A4 Print Studio
+# 📄 Kaagaz — Online-First PDF Toolkit, Universal Reader & AI A4 Print Studio
 
 **Kaagaz** is a fast, open-source, privacy-first desktop and web productivity suite. It brings **all 33 offline PDF tools**, a **Universal All-Document Reader**, and an **Online Gemini-Style AI & Smart A4 Print Studio** into one clean, minimalist workspace.
 
@@ -15,10 +15,6 @@ Every PDF operation runs 100% locally in memory—no file uploads, zero cloud de
 - **Edit PDF (5):** Rotate PDF, Add Page Numbers, Add Watermark, Crop PDF, Edit/Annotate PDF.
 - **PDF Security (4):** Unlock PDF, Protect PDF, Sign PDF, Redact PDF.
 - **Workflows & Utilities (3):** Compare PDF, Flatten & Grayscale PDF, Custom Multi-Step Workflows.
-
-### 📚 2. Universal All-Document Reader (100% Offline)
-Open, search, and read almost any file format in browser-style tabs without needing external software:
-- **PDF (`.pdf`), Word (`.docx`, `.doc`, `.rtf`), Excel/CSV (`.xlsx`, `.xls`, `.csv`), PowerPoint (`.pptx`), Markdown (`.md`), Code/Text (`.txt`, `.html`, `.json`), and Images.**
 
 - **Smart A4 Printout Engine:** Live paginated A4 preview (`210mm × 297mm`) with **Compact Exam Paper Mode** and **2-Column Layout** to save up to 40% paper when printing (`Ctrl + P`).
 
