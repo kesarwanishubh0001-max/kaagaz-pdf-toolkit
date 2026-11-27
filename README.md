@@ -6,7 +6,7 @@
 
 ## ✨ Key Features
 
-### 🔒 1. Complete Offline PDF Toolkit (All 33 Tools)
+### 🔒 1. Complete Online PDF Toolkit (All 33 Tools)
 Every PDF operation runs 100% locally in memory—no file uploads, zero cloud dependency, complete privacy:
 - **Organize PDF (6):** Merge PDF, Split PDF, Remove Pages, Extract Pages, Visual Organize PDF, Scan to PDF.
 - **Optimize PDF (3):** Compress PDF, Repair PDF, Offline OCR PDF (`tesseract.js`).
@@ -20,28 +20,9 @@ Every PDF operation runs 100% locally in memory—no file uploads, zero cloud de
 Open, search, and read almost any file format in browser-style tabs without needing external software:
 - **PDF (`.pdf`), Word (`.docx`, `.doc`, `.rtf`), Excel/CSV (`.xlsx`, `.xls`, `.csv`), PowerPoint (`.pptx`), Markdown (`.md`), Code/Text (`.txt`, `.html`, `.json`), and Images.**
 
-### 🤖 3. Online AI Assistant & Zero-Waste A4 Print Studio (BYOK)
-Bring your own API key (**Google Gemini, OpenAI, Anthropic Claude, or OpenRouter**) when online:
-- **Gemini-Style AI Studio:** Summarize documents, chat with PDFs, expand short notes, format exam papers, or translate between Hindi & English.
 - **Smart A4 Printout Engine:** Live paginated A4 preview (`210mm × 297mm`) with **Compact Exam Paper Mode** and **2-Column Layout** to save up to 40% paper when printing (`Ctrl + P`).
 
 ---
-
-## ⬇️ Download for Windows (Offline `.exe`)
-1. Open the [**Releases**](../../releases) section on the right side of this repository.
-2. Download the latest **Portable `.exe`** (no installation needed) or **Setup `.exe`**.
-3. Run 100% offline on Windows 10 / Windows 11!
-
----
-
-## 🛠️ Run Locally from Source
-```bash
-git clone https://github.com
-cd kaagaz-pdf-toolkit
-npm install
-npm run dev        # Start web app locally
-npm run build:exe  # Build offline Windows .exe
-```
 
 ## 📜 License
 This project is free and open-source under the **MIT License**.
