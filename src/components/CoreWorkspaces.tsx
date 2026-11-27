@@ -23,26 +23,36 @@ import {
   ImagePlus,
   FilePlus2,
   CheckCircle2,
+  Plus,
+  Files,
 } from 'lucide-react';
 import {
   LoadedPdfFile,
   PageThumbnail,
   CompressionPreset,
   ScanFilter,
+  SplitRangeSpec,
   inspectPdfFile,
   renderPdfThumbnails,
   mergePdfFiles,
   extractPagesToSinglePdf,
   splitPagesToZip,
+  splitPdfByRanges,
+  buildFixedRanges,
+  bundleOutputsToZip,
   buildOrganizedPdf,
   applyDocumentFilter,
   compileScansToPdf,
   compressPdfLocally,
-  parsePageRanges,
   formatBytes,
   triggerDownload,
 } from '../utils/pdfEngine';
-import { WorkspaceDropzone, FloatingActionBar } from './WorkspaceShared';
+import {
+  WorkspaceDropzone,
+  FloatingActionBar,
+  MultiOutputDownloadPanel,
+  GeneratedFileItem,
+} from './WorkspaceShared';
 
 /* ============================================================================
    1. MERGE PDF WORKSPACE
@@ -321,186 +331,596 @@ export const MergePdfWorkspace: React.FC = () => {
 };
 
 /* ============================================================================
-   2. SPLIT PDF WORKSPACE
+   2. SPLIT PDF WORKSPACE (Multiple Custom Ranges, Fixed Ranges & Burst)
 ============================================================================ */
+const RANGE_ACCENTS = [
+  {
+    ring: 'border-[#0A84FF] bg-[#0A84FF]/[0.07]',
+    dot: 'bg-[#0A84FF]',
+    text: 'text-[#0071E3] dark:text-[#409CFF]',
+  },
+  {
+    ring: 'border-[#BF5AF2] bg-[#BF5AF2]/[0.07]',
+    dot: 'bg-[#BF5AF2]',
+    text: 'text-purple-600 dark:text-[#BF5AF2]',
+  },
+  {
+    ring: 'border-[#30D158] bg-[#30D158]/[0.07]',
+    dot: 'bg-[#30D158]',
+    text: 'text-emerald-600 dark:text-[#30D158]',
+  },
+  {
+    ring: 'border-[#FF9F0A] bg-[#FF9F0A]/[0.07]',
+    dot: 'bg-[#FF9F0A]',
+    text: 'text-amber-600 dark:text-[#FF9F0A]',
+  },
+  {
+    ring: 'border-[#FF453A] bg-[#FF453A]/[0.07]',
+    dot: 'bg-[#FF453A]',
+    text: 'text-rose-600 dark:text-[#FF453A]',
+  },
+  {
+    ring: 'border-[#64D2FF] bg-[#64D2FF]/[0.07]',
+    dot: 'bg-[#64D2FF]',
+    text: 'text-sky-600 dark:text-[#64D2FF]',
+  },
+];
+
 export const SplitPdfWorkspace: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [thumbnails, setThumbnails] = useState<PageThumbnail[]>([]);
   const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
-  const [splitMode, setSplitMode] = useState<'range' | 'burst-zip'>('range');
-  const [rangeInput, setRangeInput] = useState('1-3, 5');
+  const [splitMode, setSplitMode] = useState<'custom' | 'fixed' | 'burst'>('custom');
+  const [previewMode, setPreviewMode] = useState<'groups' | 'pages'>('groups');
+  const [ranges, setRanges] = useState<SplitRangeSpec[]>([]);
+  const [fixedStep, setFixedStep] = useState<number>(3);
+  const [mergeAllRanges, setMergeAllRanges] = useState(false);
+  const [generatedFiles, setGeneratedFiles] = useState<GeneratedFileItem[]>([]);
+
+  const totalPages = thumbnails.length;
 
   const handleFileLoad = async (files: File[]) => {
     const selected = files[0];
     if (!selected) return;
     setLoading(true);
+    setGeneratedFiles([]);
     try {
       setFile(selected);
       const thumbs = await renderPdfThumbnails(selected, 0.45);
       setThumbnails(thumbs);
-      setRangeInput(`1-${Math.min(3, thumbs.length)}`);
+      const total = thumbs.length;
+      if (total <= 1) {
+        setRanges([{ id: 'r-1', label: 'Range 1', from: 1, to: 1 }]);
+      } else {
+        const mid = Math.ceil(total / 2);
+        setRanges([
+          { id: 'r-1', label: 'Range 1', from: 1, to: mid },
+          { id: 'r-2', label: 'Range 2', from: Math.min(total, mid + 1), to: total },
+        ]);
+      }
+      setFixedStep(Math.max(1, Math.min(4, Math.ceil(total / 3))));
     } finally {
       setLoading(false);
     }
   };
 
-  const selectedPages =
-    splitMode === 'burst-zip'
-      ? thumbnails.map((t) => t.originalPageNumber)
-      : parsePageRanges(rangeInput, thumbnails.length);
+  const activeRanges: SplitRangeSpec[] =
+    splitMode === 'custom'
+      ? ranges
+      : splitMode === 'fixed'
+        ? buildFixedRanges(totalPages, fixedStep)
+        : thumbnails.map((t) => ({
+            id: `burst-${t.originalPageNumber}`,
+            label: `Page ${t.originalPageNumber}`,
+            from: t.originalPageNumber,
+            to: t.originalPageNumber,
+          }));
 
-  const handleSplitExport = async () => {
-    if (!file || selectedPages.length === 0) return;
+  const addRange = () => {
+    if (totalPages === 0) return;
+    const last = ranges[ranges.length - 1];
+    const nextStart = last ? Math.min(totalPages, Math.max(last.from, last.to) + 1) : 1;
+    const span = last ? Math.max(1, Math.abs(last.to - last.from) + 1) : 3;
+    const nextEnd = Math.min(totalPages, nextStart + span - 1);
+    setRanges((prev) => [
+      ...prev,
+      {
+        id: `r-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+        label: `Range ${prev.length + 1}`,
+        from: nextStart,
+        to: nextEnd,
+      },
+    ]);
+    setGeneratedFiles([]);
+  };
+
+  const updateRange = (id: string, field: 'from' | 'to', raw: number) => {
+    const clamped = Math.max(1, Math.min(Math.max(1, totalPages), isNaN(raw) ? 1 : raw));
+    setRanges((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, [field]: clamped } : r))
+    );
+    setGeneratedFiles([]);
+  };
+
+  const removeRange = (id: string) => {
+    setRanges((prev) => {
+      const next = prev.filter((r) => r.id !== id);
+      return next.map((r, i) => ({ ...r, label: `Range ${i + 1}` }));
+    });
+    setGeneratedFiles([]);
+  };
+
+  const handleDownloadSingleRange = async (range: SplitRangeSpec, idx: number) => {
+    if (!file) return;
     setProcessing(true);
     try {
-      const base = file.name.replace(/\.pdf$/i, '');
-      if (splitMode === 'range') {
-        const bytes = await extractPagesToSinglePdf(file, selectedPages);
-        triggerDownload(bytes, `${base}-split.pdf`);
-      } else {
-        const zipBlob = await splitPagesToZip(file, selectedPages);
-        triggerDownload(zipBlob, `${base}-all-pages.zip`, 'application/zip');
+      const outputs = await splitPdfByRanges(file, [range]);
+      if (outputs[0]) {
+        const base = file.name.replace(/\.pdf$/i, '');
+        const start = Math.min(range.from, range.to);
+        const end = Math.max(range.from, range.to);
+        const suffix = start === end ? `p${start}` : `p${start}-${end}`;
+        triggerDownload(outputs[0].bytes, `${base}-split-${idx + 1}-${suffix}.pdf`);
       }
     } finally {
       setProcessing(false);
     }
   };
 
+  const handleSplitExport = async () => {
+    if (!file || activeRanges.length === 0) return;
+    setProcessing(true);
+    try {
+      const base = file.name.replace(/\.pdf$/i, '');
+
+      if (splitMode === 'custom' && mergeAllRanges) {
+        const allPages: number[] = [];
+        for (const r of activeRanges) {
+          const start = Math.max(1, Math.min(totalPages, Math.min(r.from, r.to)));
+          const end = Math.max(1, Math.min(totalPages, Math.max(r.from, r.to)));
+          for (let p = start; p <= end; p++) allPages.push(p);
+        }
+        const mergedBytes = await extractPagesToSinglePdf(file, allPages);
+        const item: GeneratedFileItem = {
+          id: 'merged-ranges',
+          filename: `${base}-merged-ranges.pdf`,
+          subtitle: `${allPages.length} pages combined`,
+          sizeBytes: mergedBytes.byteLength,
+          data: mergedBytes,
+        };
+        setGeneratedFiles([item]);
+        triggerDownload(mergedBytes, item.filename);
+        return;
+      }
+
+      const outputs = await splitPdfByRanges(file, activeRanges);
+      const items: GeneratedFileItem[] = outputs.map((o) => ({
+        id: o.id,
+        filename: o.filename,
+        subtitle: `${o.pageRangeLabel} · ${o.pageCount} page${o.pageCount === 1 ? '' : 's'}`,
+        sizeBytes: o.bytes.byteLength,
+        data: o.bytes,
+      }));
+      setGeneratedFiles(items);
+
+      if (items.length === 1) {
+        triggerDownload(items[0].data, items[0].filename);
+      } else if (items.length > 1) {
+        const zipBlob = await bundleOutputsToZip(
+          outputs.map((o) => ({ filename: o.filename, bytes: o.bytes }))
+        );
+        triggerDownload(zipBlob, `${base}-splits.zip`, 'application/zip');
+      }
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const getThumbByPage = (pageNum: number) =>
+    thumbnails.find((t) => t.originalPageNumber === pageNum);
+
+  const getRangeIndexForPage = (pageNum: number) =>
+    activeRanges.findIndex((r) => {
+      const s = Math.min(r.from, r.to);
+      const e = Math.max(r.from, r.to);
+      return pageNum >= s && pageNum <= e;
+    });
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-28">
-      <div className="lg:col-span-8">
+      <div className="lg:col-span-8 space-y-5">
         {!file ? (
           <WorkspaceDropzone
-            title="Drop a PDF to split by ranges or burst to ZIP"
-            subtitle="Preview every page live with highlighted range extraction or split every page into separate PDFs."
+            title="Drop a PDF to split into multiple files"
+            subtitle="Create multiple page ranges (e.g. 1–4, 5–8, 9–12), split at fixed intervals, or burst every page into separate PDFs."
+            sampleLabel="Load 12-page sample PDF"
+            samplePageCount={12}
             onFilesSelected={handleFileLoad}
             loading={loading}
           />
         ) : (
-          <div className="rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 p-5">
-            <div className="flex flex-wrap items-center justify-between gap-2 pb-4 mb-4 border-b border-slate-200 dark:border-slate-800">
-              <div>
-                <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-                  {file.name}
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-                  {thumbnails.length} pages · {selectedPages.length} included in output
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setFile(null);
-                  setThumbnails([]);
-                }}
-                className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs text-slate-600 dark:text-slate-300 hover:text-rose-500 transition"
-              >
-                Change file
-              </button>
-            </div>
+          <>
+            <div className="rounded-2xl bg-white dark:bg-[#121215] border border-black/[0.06] dark:border-white/[0.07] p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-4 mb-5 border-b border-black/[0.06] dark:border-white/[0.07]">
+                <div className="min-w-0">
+                  <h3 className="text-base font-semibold text-slate-900 dark:text-[#F5F5F7] truncate">
+                    {file.name}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 tabular-nums mt-0.5">
+                    {totalPages} pages ·{' '}
+                    {splitMode === 'custom' && mergeAllRanges
+                      ? '1 merged output PDF'
+                      : `${activeRanges.length} separate split PDF${activeRanges.length === 1 ? '' : 's'}`}
+                  </p>
+                </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3.5">
-              {thumbnails.map((thumb) => {
-                const isIncluded = selectedPages.includes(thumb.originalPageNumber);
-                return (
-                  <div
-                    key={thumb.id}
-                    className={`rounded-xl p-2 border transition ${
-                      isIncluded
-                        ? 'border-indigo-500 bg-indigo-500/8 ring-1 ring-indigo-500/30'
-                        : 'border-slate-200 dark:border-slate-800 opacity-45'
-                    }`}
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 p-1 rounded-xl bg-black/[0.04] dark:bg-white/[0.05]">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewMode('groups')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-medium transition whitespace-nowrap ${
+                        previewMode === 'groups'
+                          ? 'bg-white dark:bg-[#222227] text-slate-900 dark:text-white shadow-xs'
+                          : 'text-slate-500 dark:text-slate-400'
+                      }`}
+                    >
+                      Split Groups
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewMode('pages')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-medium transition whitespace-nowrap ${
+                        previewMode === 'pages'
+                          ? 'bg-white dark:bg-[#222227] text-slate-900 dark:text-white shadow-xs'
+                          : 'text-slate-500 dark:text-slate-400'
+                      }`}
+                    >
+                      All Pages
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFile(null);
+                      setThumbnails([]);
+                      setRanges([]);
+                      setGeneratedFiles([]);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] text-xs text-slate-600 dark:text-slate-300 hover:text-rose-500 transition whitespace-nowrap"
                   >
-                    <img
-                      src={thumb.dataUrl}
-                      alt={`Page ${thumb.originalPageNumber}`}
-                      className="w-full aspect-[1/1.3] object-contain rounded-lg bg-white border border-slate-100 dark:border-slate-800"
-                    />
-                    <div className="mt-2 flex items-center justify-between px-1 text-xs">
-                      <span className="font-mono font-medium tabular-nums text-slate-700 dark:text-slate-300">
-                        Page {thumb.originalPageNumber}
-                      </span>
-                      <span
-                        className={`text-[11px] font-medium ${
-                          isIncluded
-                            ? 'text-indigo-600 dark:text-indigo-400'
-                            : 'text-slate-400'
+                    Change file
+                  </button>
+                </div>
+              </div>
+
+              {previewMode === 'groups' ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {activeRanges.map((range, idx) => {
+                    const accent = RANGE_ACCENTS[idx % RANGE_ACCENTS.length];
+                    const start = Math.max(1, Math.min(totalPages, Math.min(range.from, range.to)));
+                    const end = Math.max(1, Math.min(totalPages, Math.max(range.from, range.to)));
+                    const pageCount = end - start + 1;
+                    const firstThumb = getThumbByPage(start);
+                    const lastThumb = getThumbByPage(end);
+
+                    return (
+                      <div
+                        key={range.id}
+                        className={`rounded-2xl p-4 border transition ${accent.ring}`}
+                      >
+                        <div className="flex items-center justify-between gap-2 mb-3">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={`w-2 h-2 rounded-full shrink-0 ${accent.dot}`} />
+                            <span className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                              {range.label}
+                            </span>
+                            <span className="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                              · {start === end ? `p. ${start}` : `p. ${start}–${end}`} ({pageCount})
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadSingleRange(range, idx)}
+                            disabled={processing}
+                            className="p-1.5 rounded-lg bg-black/[0.05] dark:bg-white/[0.08] hover:bg-[#0A84FF] hover:text-white text-slate-600 dark:text-slate-200 transition shrink-0"
+                            title={`Download ${range.label} as standalone PDF`}
+                          >
+                            <Download className="w-3.5 h-3.5" strokeWidth={1.6} />
+                          </button>
+                        </div>
+
+                        <div className="flex items-center justify-center gap-3 py-2">
+                          {firstThumb && (
+                            <div className="w-24 text-center">
+                              <img
+                                src={firstThumb.dataUrl}
+                                alt={`Page ${start}`}
+                                className="w-full aspect-[1/1.3] object-contain rounded-lg bg-white border border-black/[0.08] dark:border-white/[0.1]"
+                              />
+                              <div className="mt-1 text-[11px] font-mono tabular-nums text-slate-500">
+                                Page {start}
+                              </div>
+                            </div>
+                          )}
+
+                          {start !== end && (
+                            <>
+                              <span className="text-xs font-mono text-slate-400">
+                                {pageCount > 2 ? '···' : '→'}
+                              </span>
+                              {lastThumb && (
+                                <div className="w-24 text-center">
+                                  <img
+                                    src={lastThumb.dataUrl}
+                                    alt={`Page ${end}`}
+                                    className="w-full aspect-[1/1.3] object-contain rounded-lg bg-white border border-black/[0.08] dark:border-white/[0.1]"
+                                  />
+                                  <div className="mt-1 text-[11px] font-mono tabular-nums text-slate-500">
+                                    Page {end}
+                                  </div>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3.5">
+                  {thumbnails.map((thumb) => {
+                    const rangeIdx = getRangeIndexForPage(thumb.originalPageNumber);
+                    const isIncluded = rangeIdx !== -1;
+                    const accent = isIncluded
+                      ? RANGE_ACCENTS[rangeIdx % RANGE_ACCENTS.length]
+                      : null;
+
+                    return (
+                      <div
+                        key={thumb.id}
+                        className={`rounded-xl p-2 border transition ${
+                          accent
+                            ? accent.ring
+                            : 'border-black/[0.06] dark:border-white/[0.07] opacity-40'
                         }`}
                       >
-                        {isIncluded ? 'Included' : 'Skipped'}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
+                        <img
+                          src={thumb.dataUrl}
+                          alt={`Page ${thumb.originalPageNumber}`}
+                          className="w-full aspect-[1/1.3] object-contain rounded-lg bg-white border border-black/[0.05]"
+                        />
+                        <div className="mt-2 flex items-center justify-between px-1 text-xs">
+                          <span className="font-mono font-medium tabular-nums text-slate-700 dark:text-slate-300">
+                            Page {thumb.originalPageNumber}
+                          </span>
+                          <span
+                            className={`text-[11px] font-mono font-medium ${
+                              accent ? accent.text : 'text-slate-400'
+                            }`}
+                          >
+                            {isIncluded ? `Split ${rangeIdx + 1}` : 'Excluded'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          </div>
+
+            <MultiOutputDownloadPanel
+              title="Split PDFs ready"
+              zipFilename={`${file.name.replace(/\.pdf$/i, '')}-splits.zip`}
+              items={generatedFiles}
+              onClear={() => setGeneratedFiles([])}
+            />
+          </>
         )}
       </div>
 
       <div className="lg:col-span-4">
-        <div className="rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 p-5 sticky top-20 space-y-5">
-          <div className="flex items-center gap-2.5 pb-3 border-b border-slate-200 dark:border-slate-800">
-            <Scissors className="w-4 h-4 text-violet-500" />
-            <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
-              Split configuration
+        <div className="rounded-2xl bg-white dark:bg-[#121215] border border-black/[0.06] dark:border-white/[0.07] p-5 sticky top-20 space-y-5">
+          <div className="flex items-center gap-2.5 pb-3 border-b border-black/[0.06] dark:border-white/[0.07]">
+            <Scissors className="w-4 h-4 text-[#0071E3] dark:text-[#0A84FF]" strokeWidth={1.6} />
+            <h4 className="text-sm font-semibold text-slate-900 dark:text-[#F5F5F7]">
+              Split options
             </h4>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setSplitMode('range')}
-              className={`p-3 rounded-xl border text-left transition ${
-                splitMode === 'range'
-                  ? 'border-indigo-500 bg-indigo-500/10 text-indigo-600 dark:text-indigo-300'
-                  : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              <div className="text-xs font-semibold">Page ranges</div>
-              <div className="text-[11px] opacity-75 mt-0.5">Save as 1 PDF</div>
-            </button>
-            <button
-              type="button"
-              onClick={() => setSplitMode('burst-zip')}
-              className={`p-3 rounded-xl border text-left transition ${
-                splitMode === 'burst-zip'
-                  ? 'border-indigo-500 bg-indigo-500/10 text-indigo-600 dark:text-indigo-300'
-                  : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              <div className="text-xs font-semibold">Split all pages</div>
-              <div className="text-[11px] opacity-75 mt-0.5">Individual PDFs in ZIP</div>
-            </button>
+          {/* 3-Mode Apple Segmented Selector */}
+          <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-black/[0.04] dark:bg-white/[0.05]">
+            {(
+              [
+                { id: 'custom', label: 'Custom' },
+                { id: 'fixed', label: 'Fixed' },
+                { id: 'burst', label: 'All Pages' },
+              ] as const
+            ).map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => {
+                  setSplitMode(m.id);
+                  setGeneratedFiles([]);
+                }}
+                className={`py-2 px-2 rounded-lg text-xs font-medium transition whitespace-nowrap ${
+                  splitMode === m.id
+                    ? 'bg-white dark:bg-[#222227] text-slate-900 dark:text-white shadow-xs'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
           </div>
 
-          {splitMode === 'range' && (
-            <div>
-              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
-                Page ranges (e.g. 1-3, 5, 6)
-              </label>
-              <input
-                type="text"
-                value={rangeInput}
-                onChange={(e) => setRangeInput(e.target.value)}
-                placeholder="1-3, 5"
-                className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-sm font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:border-indigo-500"
-              />
+          {splitMode === 'custom' && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                  Page ranges ({ranges.length})
+                </span>
+                <button
+                  type="button"
+                  onClick={addRange}
+                  disabled={!file}
+                  className="px-2.5 py-1 rounded-lg bg-[#0071E3]/10 dark:bg-[#0A84FF]/15 text-[#0071E3] dark:text-[#409CFF] hover:opacity-85 disabled:opacity-40 text-xs font-medium flex items-center gap-1 transition whitespace-nowrap"
+                >
+                  <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />
+                  Add Range
+                </button>
+              </div>
+
+              <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-0.5">
+                {ranges.map((range, idx) => {
+                  const accent = RANGE_ACCENTS[idx % RANGE_ACCENTS.length];
+                  return (
+                    <div
+                      key={range.id}
+                      className="rounded-xl p-3 bg-black/[0.02] dark:bg-white/[0.03] border border-black/[0.06] dark:border-white/[0.07] space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-2 h-2 rounded-full ${accent.dot}`} />
+                          <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                            {range.label}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadSingleRange(range, idx)}
+                            disabled={!file || processing}
+                            className="p-1 rounded-md text-slate-400 hover:text-[#0A84FF] transition"
+                            title="Download this range only"
+                          >
+                            <Download className="w-3.5 h-3.5" strokeWidth={1.6} />
+                          </button>
+                          {ranges.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeRange(range.id)}
+                              className="p-1 rounded-md text-slate-400 hover:text-rose-500 transition"
+                              title="Remove range"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" strokeWidth={1.6} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[11px] text-slate-500 mb-1">From</label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={Math.max(1, totalPages)}
+                            value={range.from}
+                            onChange={(e) =>
+                              updateRange(range.id, 'from', parseInt(e.target.value, 10))
+                            }
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-[#09090B] border border-black/[0.08] dark:border-white/[0.09] text-xs font-mono tabular-nums text-slate-900 dark:text-white focus:outline-none focus:border-[#0A84FF]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] text-slate-500 mb-1">To</label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={Math.max(1, totalPages)}
+                            value={range.to}
+                            onChange={(e) =>
+                              updateRange(range.id, 'to', parseInt(e.target.value, 10))
+                            }
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-[#09090B] border border-black/[0.08] dark:border-white/[0.09] text-xs font-mono tabular-nums text-slate-900 dark:text-white focus:outline-none focus:border-[#0A84FF]"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {ranges.length > 1 && (
+                <label className="flex items-center gap-2.5 pt-1 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={mergeAllRanges}
+                    onChange={(e) => {
+                      setMergeAllRanges(e.target.checked);
+                      setGeneratedFiles([]);
+                    }}
+                    className="rounded accent-[#0A84FF]"
+                  />
+                  <span>Merge all ranges into one PDF</span>
+                </label>
+              )}
             </div>
           )}
 
-          <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
+          {splitMode === 'fixed' && (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">
+                  Split into page ranges of
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={Math.max(1, totalPages)}
+                    value={fixedStep}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      setFixedStep(Math.max(1, isNaN(val) ? 1 : val));
+                      setGeneratedFiles([]);
+                    }}
+                    className="w-24 px-3 py-2 rounded-xl bg-white dark:bg-[#09090B] border border-black/[0.08] dark:border-white/[0.09] text-sm font-mono tabular-nums text-slate-900 dark:text-white focus:outline-none focus:border-[#0A84FF]"
+                  />
+                  <span className="text-xs text-slate-500">pages per split PDF</span>
+                </div>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                This will create{' '}
+                <strong className="text-slate-900 dark:text-white tabular-nums">
+                  {activeRanges.length}
+                </strong>{' '}
+                separate PDF file{activeRanges.length === 1 ? '' : 's'} automatically.
+              </p>
+            </div>
+          )}
+
+          {splitMode === 'burst' && (
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              Splits every page into its own standalone PDF file (
+              <span className="font-mono tabular-nums text-slate-900 dark:text-white">
+                {totalPages}
+              </span>{' '}
+              PDFs total) ready to download as a ZIP or individually.
+            </p>
+          )}
+
+          <div className="space-y-2 pt-3 border-t border-black/[0.06] dark:border-white/[0.07] text-xs">
             <div className="flex justify-between">
-              <span className="text-slate-500 dark:text-slate-400">Selected pages</span>
-              <span className="font-mono font-semibold tabular-nums text-indigo-600 dark:text-indigo-400">
-                {selectedPages.length} / {thumbnails.length}
+              <span className="text-slate-500 dark:text-slate-400">Output files</span>
+              <span className="font-mono font-semibold tabular-nums text-[#0071E3] dark:text-[#409CFF]">
+                {splitMode === 'custom' && mergeAllRanges ? 1 : activeRanges.length} PDF
+                {(splitMode === 'custom' && mergeAllRanges ? 1 : activeRanges.length) === 1
+                  ? ''
+                  : 's'}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500 dark:text-slate-400">Export format</span>
+              <span className="text-slate-500 dark:text-slate-400">Download format</span>
               <span className="font-mono font-medium text-slate-800 dark:text-slate-200">
-                {splitMode === 'range' ? '.PDF' : '.ZIP Archive'}
+                {(splitMode === 'custom' && mergeAllRanges) || activeRanges.length <= 1
+                  ? '.PDF'
+                  : '.ZIP + Individual PDFs'}
               </span>
             </div>
           </div>
@@ -508,18 +928,22 @@ export const SplitPdfWorkspace: React.FC = () => {
           <button
             type="button"
             onClick={handleSplitExport}
-            disabled={!file || selectedPages.length === 0 || processing}
-            className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 text-white font-medium text-sm shadow-sm flex items-center justify-center gap-2 transition"
+            disabled={!file || activeRanges.length === 0 || processing}
+            className="w-full py-2.5 px-4 rounded-xl bg-[#0071E3] dark:bg-[#0A84FF] hover:opacity-92 disabled:opacity-40 text-white font-medium text-sm flex items-center justify-center gap-2 transition"
           >
             {processing ? (
               <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
+                <RefreshCw className="w-4 h-4 animate-spin" strokeWidth={1.6} />
                 Splitting PDF...
               </>
             ) : (
               <>
-                <Download className="w-4 h-4" />
-                {splitMode === 'range' ? 'Download Split PDF' : 'Download All Pages (.ZIP)'}
+                <Download className="w-4 h-4" strokeWidth={1.6} />
+                {splitMode === 'custom' && mergeAllRanges
+                  ? 'Split & Download Merged PDF'
+                  : activeRanges.length > 1
+                    ? `Split into ${activeRanges.length} PDFs`
+                    : 'Download Split PDF'}
               </>
             )}
           </button>
@@ -528,15 +952,27 @@ export const SplitPdfWorkspace: React.FC = () => {
 
       <FloatingActionBar
         visible={Boolean(file)}
-        summary={`${selectedPages.length} of ${thumbnails.length} pages`}
-        detail={splitMode === 'range' ? `Ranges: ${rangeInput || 'none'}` : 'Separate PDFs in ZIP'}
-        actionLabel={splitMode === 'range' ? 'Download PDF' : 'Download ZIP'}
-        disabled={selectedPages.length === 0}
+        summary={
+          splitMode === 'custom' && mergeAllRanges
+            ? `${activeRanges.length} ranges → 1 PDF`
+            : `${activeRanges.length} split PDF${activeRanges.length === 1 ? '' : 's'}`
+        }
+        detail={file?.name}
+        actionLabel={
+          processing
+            ? 'Splitting...'
+            : activeRanges.length > 1 && !(splitMode === 'custom' && mergeAllRanges)
+              ? `Split (${activeRanges.length} PDFs)`
+              : 'Download PDF'
+        }
+        disabled={activeRanges.length === 0}
         busy={processing}
         onAction={handleSplitExport}
         onReset={() => {
           setFile(null);
           setThumbnails([]);
+          setRanges([]);
+          setGeneratedFiles([]);
         }}
       />
     </div>
@@ -751,49 +1187,152 @@ export const RemovePagesWorkspace: React.FC = () => {
 };
 
 /* ============================================================================
-   4. EXTRACT PAGES WORKSPACE
+   4. EXTRACT PAGES WORKSPACE (Multiple Extraction Sets + Separate/ZIP Export)
 ============================================================================ */
+interface ExtractionSet {
+  id: string;
+  label: string;
+  pages: number[];
+}
+
 export const ExtractPagesWorkspace: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [thumbnails, setThumbnails] = useState<PageThumbnail[]>([]);
-  const [selectedPages, setSelectedPages] = useState<number[]>([]);
-  const [exportFormat, setExportFormat] = useState<'single-pdf' | 'zip'>('single-pdf');
+  const [sets, setSets] = useState<ExtractionSet[]>([
+    { id: 'set-1', label: 'Extract 1', pages: [] },
+  ]);
+  const [activeSetId, setActiveSetId] = useState<string>('set-1');
+  const [exportFormat, setExportFormat] = useState<'per-set' | 'single-pdf' | 'per-page'>(
+    'per-set'
+  );
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [generatedFiles, setGeneratedFiles] = useState<GeneratedFileItem[]>([]);
 
   const handleFileLoad = async (files: File[]) => {
     const selected = files[0];
     if (!selected) return;
     setLoading(true);
+    setGeneratedFiles([]);
     try {
       setFile(selected);
       const thumbs = await renderPdfThumbnails(selected, 0.45);
       setThumbnails(thumbs);
-      setSelectedPages(thumbs.length > 0 ? [1] : []);
+      const initialPages = thumbs.length >= 2 ? [1, 2] : thumbs.length === 1 ? [1] : [];
+      setSets([{ id: 'set-1', label: 'Extract 1', pages: initialPages }]);
+      setActiveSetId('set-1');
     } finally {
       setLoading(false);
     }
   };
 
+  const activeSet = sets.find((s) => s.id === activeSetId) || sets[0];
+
   const toggleSelectPage = (pageNum: number) => {
-    setSelectedPages((prev) =>
-      prev.includes(pageNum)
-        ? prev.filter((p) => p !== pageNum)
-        : [...prev, pageNum].sort((a, b) => a - b)
+    if (!activeSet) return;
+    setSets((prev) =>
+      prev.map((s) => {
+        if (s.id !== activeSet.id) return s;
+        const exists = s.pages.includes(pageNum);
+        return {
+          ...s,
+          pages: exists
+            ? s.pages.filter((p) => p !== pageNum)
+            : [...s.pages, pageNum].sort((a, b) => a - b),
+        };
+      })
     );
+    setGeneratedFiles([]);
   };
 
+  const addExtractionSet = () => {
+    const id = `set-${Date.now()}`;
+    setSets((prev) => [...prev, { id, label: `Extract ${prev.length + 1}`, pages: [] }]);
+    setActiveSetId(id);
+    setExportFormat('per-set');
+    setGeneratedFiles([]);
+  };
+
+  const removeExtractionSet = (id: string) => {
+    setSets((prev) => {
+      if (prev.length <= 1) return prev;
+      const next = prev.filter((s) => s.id !== id).map((s, idx) => ({
+        ...s,
+        label: `Extract ${idx + 1}`,
+      }));
+      if (activeSetId === id && next[0]) setActiveSetId(next[0].id);
+      return next;
+    });
+    setGeneratedFiles([]);
+  };
+
+  const nonEmptySets = sets.filter((s) => s.pages.length > 0);
+  const allPickedUnique = Array.from(
+    new Set(nonEmptySets.flatMap((s) => s.pages))
+  ).sort((a, b) => a - b);
+
   const handleExtract = async () => {
-    if (!file || selectedPages.length === 0) return;
+    if (!file || nonEmptySets.length === 0) return;
     setExporting(true);
     try {
       const base = file.name.replace(/\.pdf$/i, '');
+
       if (exportFormat === 'single-pdf') {
-        const bytes = await extractPagesToSinglePdf(file, selectedPages);
-        triggerDownload(bytes, `${base}-extracted.pdf`);
+        const pages = nonEmptySets.flatMap((s) => s.pages);
+        const bytes = await extractPagesToSinglePdf(file, pages);
+        const item: GeneratedFileItem = {
+          id: 'extract-combined',
+          filename: `${base}-extracted.pdf`,
+          subtitle: `${pages.length} pages`,
+          sizeBytes: bytes.byteLength,
+          data: bytes,
+        };
+        setGeneratedFiles([item]);
+        triggerDownload(bytes, item.filename);
+      } else if (exportFormat === 'per-page') {
+        const items: GeneratedFileItem[] = [];
+        for (const pageNum of allPickedUnique) {
+          const bytes = await extractPagesToSinglePdf(file, [pageNum]);
+          items.push({
+            id: `page-${pageNum}`,
+            filename: `${base}-page-${String(pageNum).padStart(2, '0')}.pdf`,
+            subtitle: `Page ${pageNum}`,
+            sizeBytes: bytes.byteLength,
+            data: bytes,
+          });
+        }
+        setGeneratedFiles(items);
+        if (items.length === 1) {
+          triggerDownload(items[0].data, items[0].filename);
+        } else {
+          const zipBlob = await splitPagesToZip(file, allPickedUnique);
+          triggerDownload(zipBlob, `${base}-extracted-pages.zip`, 'application/zip');
+        }
       } else {
-        const zipBlob = await splitPagesToZip(file, selectedPages);
-        triggerDownload(zipBlob, `${base}-extracted-pages.zip`, 'application/zip');
+        const items: GeneratedFileItem[] = [];
+        for (let i = 0; i < nonEmptySets.length; i++) {
+          const set = nonEmptySets[i];
+          const bytes = await extractPagesToSinglePdf(file, set.pages);
+          items.push({
+            id: set.id,
+            filename: `${base}-extract-${i + 1}.pdf`,
+            subtitle: `${set.label} · Pages ${set.pages.join(', ')}`,
+            sizeBytes: bytes.byteLength,
+            data: bytes,
+          });
+        }
+        setGeneratedFiles(items);
+        if (items.length === 1) {
+          triggerDownload(items[0].data, items[0].filename);
+        } else {
+          const zipBlob = await bundleOutputsToZip(
+            items.map((item) => ({
+              filename: item.filename,
+              bytes: item.data as Uint8Array,
+            }))
+          );
+          triggerDownload(zipBlob, `${base}-extractions.zip`, 'application/zip');
+        }
       }
     } finally {
       setExporting(false);
@@ -802,177 +1341,302 @@ export const ExtractPagesWorkspace: React.FC = () => {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-28">
-      <div className="lg:col-span-8">
+      <div className="lg:col-span-8 space-y-5">
         {!file ? (
           <WorkspaceDropzone
-            title="Drop a PDF to extract specific pages"
-            subtitle="Pick individual pages from interactive thumbnails and export as a new PDF or ZIP archive."
+            title="Drop a PDF to extract one or multiple page sets"
+            subtitle="Pick pages into separate extraction sets to download multiple standalone PDFs at once."
+            samplePageCount={10}
             onFilesSelected={handleFileLoad}
             loading={loading}
           />
         ) : (
-          <div className="rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 p-5">
-            <div className="flex flex-wrap items-center justify-between gap-2 pb-4 mb-4 border-b border-slate-200 dark:border-slate-800">
-              <div>
-                <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-                  Select pages to extract
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-                  {selectedPages.length} of {thumbnails.length} selected
-                </p>
+          <>
+            <div className="rounded-2xl bg-white dark:bg-[#121215] border border-black/[0.06] dark:border-white/[0.07] p-5">
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-4 mb-4 border-b border-black/[0.06] dark:border-white/[0.07]">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900 dark:text-[#F5F5F7]">
+                    Click pages for {activeSet?.label}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+                    {activeSet?.pages.length || 0} pages in {activeSet?.label} ·{' '}
+                    {nonEmptySets.length} output set{nonEmptySets.length === 1 ? '' : 's'}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSets((prev) =>
+                        prev.map((s) =>
+                          s.id === activeSet?.id
+                            ? { ...s, pages: thumbnails.map((t) => t.originalPageNumber) }
+                            : s
+                        )
+                      )
+                    }
+                    className="px-2.5 py-1.5 rounded-lg bg-black/[0.04] dark:bg-white/[0.06] text-xs text-slate-700 dark:text-slate-300"
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSets((prev) =>
+                        prev.map((s) =>
+                          s.id === activeSet?.id
+                            ? {
+                                ...s,
+                                pages: thumbnails
+                                  .map((t) => t.originalPageNumber)
+                                  .filter((n) => n % 2 === 1),
+                              }
+                            : s
+                        )
+                      )
+                    }
+                    className="px-2.5 py-1.5 rounded-lg bg-black/[0.04] dark:bg-white/[0.06] text-xs text-slate-700 dark:text-slate-300"
+                  >
+                    Odd
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSets((prev) =>
+                        prev.map((s) =>
+                          s.id === activeSet?.id
+                            ? {
+                                ...s,
+                                pages: thumbnails
+                                  .map((t) => t.originalPageNumber)
+                                  .filter((n) => n % 2 === 0),
+                              }
+                            : s
+                        )
+                      )
+                    }
+                    className="px-2.5 py-1.5 rounded-lg bg-black/[0.04] dark:bg-white/[0.06] text-xs text-slate-700 dark:text-slate-300"
+                  >
+                    Even
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSets((prev) =>
+                        prev.map((s) => (s.id === activeSet?.id ? { ...s, pages: [] } : s))
+                      )
+                    }
+                    className="px-2.5 py-1.5 rounded-lg bg-black/[0.04] dark:bg-white/[0.06] text-xs text-slate-500"
+                  >
+                    Clear
+                  </button>
+                </div>
               </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSelectedPages(thumbnails.map((t) => t.originalPageNumber))
-                  }
-                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-300"
-                >
-                  All
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSelectedPages(
-                      thumbnails
-                        .map((t) => t.originalPageNumber)
-                        .filter((n) => n % 2 === 1)
-                    )
-                  }
-                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-300"
-                >
-                  Odd
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSelectedPages(
-                      thumbnails
-                        .map((t) => t.originalPageNumber)
-                        .filter((n) => n % 2 === 0)
-                    )
-                  }
-                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-300"
-                >
-                  Even
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedPages([])}
-                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs text-slate-500"
-                >
-                  None
-                </button>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3.5">
+                {thumbnails.map((thumb) => {
+                  const isInActive = activeSet?.pages.includes(thumb.originalPageNumber);
+                  const assignedSets = sets
+                    .map((s, idx) => (s.pages.includes(thumb.originalPageNumber) ? idx + 1 : null))
+                    .filter((v): v is number => v !== null);
+
+                  return (
+                    <button
+                      type="button"
+                      key={thumb.id}
+                      onClick={() => toggleSelectPage(thumb.originalPageNumber)}
+                      className={`relative rounded-xl p-2 border text-left transition ${
+                        isInActive
+                          ? 'border-[#0A84FF] bg-[#0A84FF]/[0.08]'
+                          : assignedSets.length > 0
+                            ? 'border-purple-500/40 bg-purple-500/[0.05]'
+                            : 'border-black/[0.06] dark:border-white/[0.07] opacity-65 hover:opacity-100'
+                      }`}
+                    >
+                      <img
+                        src={thumb.dataUrl}
+                        alt={`Page ${thumb.originalPageNumber}`}
+                        className="w-full aspect-[1/1.3] object-contain rounded-lg bg-white"
+                      />
+                      <div className="mt-2 flex items-center justify-between px-1">
+                        <span className="text-xs font-mono font-medium tabular-nums text-slate-700 dark:text-slate-300">
+                          Page {thumb.originalPageNumber}
+                        </span>
+                        {isInActive ? (
+                          <CheckSquare className="w-4 h-4 text-[#0071E3] dark:text-[#0A84FF]" strokeWidth={1.6} />
+                        ) : assignedSets.length > 0 ? (
+                          <span className="text-[10px] font-mono text-purple-400">
+                            S{assignedSets.join(',')}
+                          </span>
+                        ) : (
+                          <Square className="w-4 h-4 text-slate-400" strokeWidth={1.6} />
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3.5">
-              {thumbnails.map((thumb) => {
-                const isSelected = selectedPages.includes(thumb.originalPageNumber);
-                return (
-                  <button
-                    type="button"
-                    key={thumb.id}
-                    onClick={() => toggleSelectPage(thumb.originalPageNumber)}
-                    className={`relative rounded-xl p-2 border text-left transition ${
-                      isSelected
-                        ? 'border-indigo-500 bg-indigo-500/8 ring-1 ring-indigo-500/30'
-                        : 'border-slate-200 dark:border-slate-800 opacity-65 hover:opacity-100'
-                    }`}
-                  >
-                    <img
-                      src={thumb.dataUrl}
-                      alt={`Page ${thumb.originalPageNumber}`}
-                      className="w-full aspect-[1/1.3] object-contain rounded-lg bg-white"
-                    />
-                    <div className="mt-2 flex items-center justify-between px-1">
-                      <span className="text-xs font-mono font-medium tabular-nums text-slate-700 dark:text-slate-300">
-                        Page {thumb.originalPageNumber}
-                      </span>
-                      {isSelected ? (
-                        <CheckSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                      ) : (
-                        <Square className="w-4 h-4 text-slate-400" />
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+            <MultiOutputDownloadPanel
+              title="Extracted PDFs ready"
+              zipFilename={`${file.name.replace(/\.pdf$/i, '')}-extractions.zip`}
+              items={generatedFiles}
+              onClear={() => setGeneratedFiles([])}
+            />
+          </>
         )}
       </div>
 
       <div className="lg:col-span-4">
-        <div className="rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 p-5 sticky top-20 space-y-5">
-          <div className="flex items-center gap-2.5 pb-3 border-b border-slate-200 dark:border-slate-800">
-            <FileOutput className="w-4 h-4 text-sky-500" />
-            <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
-              Extraction output
-            </h4>
+        <div className="rounded-2xl bg-white dark:bg-[#121215] border border-black/[0.06] dark:border-white/[0.07] p-5 sticky top-20 space-y-5">
+          <div className="flex items-center justify-between pb-3 border-b border-black/[0.06] dark:border-white/[0.07]">
+            <div className="flex items-center gap-2.5">
+              <FileOutput className="w-4 h-4 text-[#0071E3] dark:text-[#0A84FF]" strokeWidth={1.6} />
+              <h4 className="text-sm font-semibold text-slate-900 dark:text-[#F5F5F7]">
+                Extraction sets
+              </h4>
+            </div>
+            <button
+              type="button"
+              onClick={addExtractionSet}
+              disabled={!file}
+              className="px-2.5 py-1 rounded-lg bg-[#0071E3]/10 dark:bg-[#0A84FF]/15 text-[#0071E3] dark:text-[#409CFF] disabled:opacity-40 text-xs font-medium flex items-center gap-1"
+            >
+              <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />
+              Add Set
+            </button>
           </div>
 
-          <div className="space-y-2">
-            <button
-              type="button"
-              onClick={() => setExportFormat('single-pdf')}
-              className={`w-full p-3 rounded-xl border text-left flex items-center justify-between transition ${
-                exportFormat === 'single-pdf'
-                  ? 'border-indigo-500 bg-indigo-500/10 text-indigo-600 dark:text-indigo-300'
-                  : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              <div>
-                <div className="text-xs font-semibold">Single combined PDF</div>
-                <div className="text-[11px] opacity-75">All picked pages in one file</div>
-              </div>
-              <FileText className="w-4 h-4 shrink-0" />
-            </button>
+          <div className="space-y-2 max-h-56 overflow-y-auto">
+            {sets.map((s, idx) => {
+              const isActive = s.id === activeSet?.id;
+              const accent = RANGE_ACCENTS[idx % RANGE_ACCENTS.length];
+              return (
+                <div
+                  key={s.id}
+                  onClick={() => setActiveSetId(s.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') setActiveSetId(s.id);
+                  }}
+                  className={`p-3 rounded-xl border cursor-pointer transition flex items-center justify-between gap-2 ${
+                    isActive
+                      ? 'border-[#0A84FF] bg-[#0A84FF]/[0.08]'
+                      : 'border-black/[0.06] dark:border-white/[0.07] hover:border-black/[0.15] dark:hover:border-white/[0.15]'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${accent.dot}`} />
+                      <span className="text-xs font-semibold text-slate-900 dark:text-white">
+                        {s.label}
+                      </span>
+                    </div>
+                    <div className="text-[11px] font-mono text-slate-500 truncate mt-0.5">
+                      {s.pages.length > 0 ? `Pages: ${s.pages.join(', ')}` : 'Click pages to select'}
+                    </div>
+                  </div>
+                  {sets.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeExtractionSet(s.id);
+                      }}
+                      className="p-1 text-slate-400 hover:text-rose-500"
+                      title="Remove extraction set"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" strokeWidth={1.6} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
 
-            <button
-              type="button"
-              onClick={() => setExportFormat('zip')}
-              className={`w-full p-3 rounded-xl border text-left flex items-center justify-between transition ${
-                exportFormat === 'zip'
-                  ? 'border-indigo-500 bg-indigo-500/10 text-indigo-600 dark:text-indigo-300'
-                  : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              <div>
-                <div className="text-xs font-semibold">Separate PDFs in ZIP</div>
-                <div className="text-[11px] opacity-75">One PDF file per selected page</div>
-              </div>
-              <Archive className="w-4 h-4 shrink-0" />
-            </button>
+          <div className="space-y-2 pt-2 border-t border-black/[0.06] dark:border-white/[0.07]">
+            {(
+              [
+                {
+                  id: 'per-set',
+                  title: 'Separate PDF per set',
+                  desc: 'Download each extraction set as its own PDF',
+                  icon: Files,
+                },
+                {
+                  id: 'single-pdf',
+                  title: 'Single combined PDF',
+                  desc: 'Combine all selected pages into 1 PDF',
+                  icon: FileText,
+                },
+                {
+                  id: 'per-page',
+                  title: '1 PDF per page (ZIP)',
+                  desc: 'Every picked page saved individually',
+                  icon: Archive,
+                },
+              ] as const
+            ).map((opt) => {
+              const Icon = opt.icon;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setExportFormat(opt.id)}
+                  className={`w-full p-3 rounded-xl border text-left flex items-center justify-between transition ${
+                    exportFormat === opt.id
+                      ? 'border-[#0A84FF] bg-[#0A84FF]/[0.08] text-[#0071E3] dark:text-[#409CFF]'
+                      : 'border-black/[0.06] dark:border-white/[0.07] text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  <div>
+                    <div className="text-xs font-semibold">{opt.title}</div>
+                    <div className="text-[11px] opacity-75">{opt.desc}</div>
+                  </div>
+                  <Icon className="w-4 h-4 shrink-0" strokeWidth={1.6} />
+                </button>
+              );
+            })}
           </div>
 
           <button
             type="button"
             onClick={handleExtract}
-            disabled={!file || selectedPages.length === 0 || exporting}
-            className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 text-white font-medium text-sm shadow-sm flex items-center justify-center gap-2 transition"
+            disabled={!file || nonEmptySets.length === 0 || exporting}
+            className="w-full py-2.5 px-4 rounded-xl bg-[#0071E3] dark:bg-[#0A84FF] hover:opacity-92 disabled:opacity-40 text-white font-medium text-sm flex items-center justify-center gap-2 transition"
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-4 h-4" strokeWidth={1.6} />
             {exporting
               ? 'Extracting...'
-              : `Extract ${selectedPages.length} Page${selectedPages.length === 1 ? '' : 's'}`}
+              : exportFormat === 'per-set' && nonEmptySets.length > 1
+                ? `Extract ${nonEmptySets.length} Separate PDFs`
+                : `Extract (${allPickedUnique.length} Page${allPickedUnique.length === 1 ? '' : 's'})`}
           </button>
         </div>
       </div>
 
       <FloatingActionBar
         visible={Boolean(file)}
-        summary={`${selectedPages.length} pages selected`}
-        detail={exportFormat === 'single-pdf' ? 'Export as 1 PDF' : 'Export as ZIP'}
+        summary={`${nonEmptySets.length} set${nonEmptySets.length === 1 ? '' : 's'} · ${allPickedUnique.length} pages`}
+        detail={
+          exportFormat === 'per-set'
+            ? '1 PDF per set'
+            : exportFormat === 'single-pdf'
+              ? '1 combined PDF'
+              : '1 PDF per page'
+        }
         actionLabel={exporting ? 'Extracting...' : 'Extract & Download'}
-        disabled={selectedPages.length === 0}
+        disabled={nonEmptySets.length === 0}
         busy={exporting}
         onAction={handleExtract}
         onReset={() => {
           setFile(null);
           setThumbnails([]);
-          setSelectedPages([]);
+          setSets([{ id: 'set-1', label: 'Extract 1', pages: [] }]);
+          setActiveSetId('set-1');
+          setGeneratedFiles([]);
         }}
       />
     </div>
@@ -1338,7 +2002,7 @@ export const ScanToPdfWorkspace: React.FC = () => {
         ['Enterprise Edge Compute Node', '$240.00'],
         ['Zero-Knowledge Local Storage', '$125.00'],
         ['Dedicated Vector Worker Seat', '$85.00'],
-        ['Offline Compliance Audit Log', '$0.00'],
+        ['Local Compliance Audit Log', '$0.00'],
       ];
       items.forEach(([label, price], idx) => {
         const y = 240 + idx * 65;
@@ -1644,274 +2308,320 @@ export const ScanToPdfWorkspace: React.FC = () => {
 };
 
 /* ============================================================================
-   7. COMPRESS PDF WORKSPACE (Extreme, Recommended, Less Presets)
+   7. COMPRESS PDF WORKSPACE (Batch Multi-PDF Compression + 3 Presets)
 ============================================================================ */
 export const CompressPdfWorkspace: React.FC = () => {
-  const [file, setFile] = useState<LoadedPdfFile | null>(null);
+  const [files, setFiles] = useState<LoadedPdfFile[]>([]);
   const [preset, setPreset] = useState<CompressionPreset>('recommended');
   const [loading, setLoading] = useState(false);
   const [compressing, setCompressing] = useState(false);
-  const [progress, setProgress] = useState<{ current: number; total: number } | null>(
-    null
-  );
-  const [result, setResult] = useState<{
-    bytes: Uint8Array;
-    compressedSize: number;
-    method: string;
+  const [progress, setProgress] = useState<{
+    fileIndex: number;
+    fileCount: number;
+    current: number;
+    total: number;
   } | null>(null);
+  const [generatedFiles, setGeneratedFiles] = useState<GeneratedFileItem[]>([]);
+  const addMoreRef = useRef<HTMLInputElement>(null);
 
-  const handleFileLoad = async (files: File[]) => {
-    const selected = files[0];
-    if (!selected) return;
+  const handleFileLoad = async (incoming: File[]) => {
+    const pdfs = incoming.filter(
+      (f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')
+    );
+    if (pdfs.length === 0) return;
     setLoading(true);
-    setResult(null);
+    setGeneratedFiles([]);
     try {
-      const info = await inspectPdfFile(selected);
-      setFile(info);
+      const inspected = await Promise.all(pdfs.map((f) => inspectPdfFile(f)));
+      setFiles((prev) => [...prev, ...inspected]);
     } finally {
       setLoading(false);
     }
   };
 
   const handleRunCompression = async () => {
-    if (!file) return;
+    if (files.length === 0) return;
     setCompressing(true);
-    setProgress({ current: 0, total: file.pageCount });
+    setGeneratedFiles([]);
     try {
-      const { bytes, method } = await compressPdfLocally(
-        file.file,
-        preset,
-        (current, total) => setProgress({ current, total })
-      );
-      setResult({
-        bytes,
-        compressedSize: bytes.byteLength,
-        method,
-      });
+      const outputs: GeneratedFileItem[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const item = files[i];
+        setProgress({
+          fileIndex: i + 1,
+          fileCount: files.length,
+          current: 0,
+          total: item.pageCount,
+        });
+        const { bytes } = await compressPdfLocally(
+          item.file,
+          preset,
+          (current, total) =>
+            setProgress({ fileIndex: i + 1, fileCount: files.length, current, total })
+        );
+        const savings = Math.round(
+          ((item.size - bytes.byteLength) / Math.max(1, item.size)) * 100
+        );
+        const base = item.name.replace(/\.pdf$/i, '');
+        outputs.push({
+          id: item.id,
+          filename: `${base}-compressed-${preset}.pdf`,
+          subtitle:
+            savings > 0
+              ? `${formatBytes(item.size)} → ${formatBytes(bytes.byteLength)} (${savings}% smaller)`
+              : `${formatBytes(item.size)} → ${formatBytes(bytes.byteLength)}`,
+          sizeBytes: bytes.byteLength,
+          data: bytes,
+        });
+      }
+      setGeneratedFiles(outputs);
+      if (outputs.length === 1) {
+        triggerDownload(outputs[0].data, outputs[0].filename);
+      }
     } finally {
       setCompressing(false);
       setProgress(null);
     }
   };
 
-  const handleDownloadCompressed = () => {
-    if (!file || !result) return;
-    const base = file.name.replace(/\.pdf$/i, '');
-    triggerDownload(result.bytes, `${base}-compressed-${preset}.pdf`);
-  };
-
-  const savingsPercent =
-    file && result
-      ? Math.round(
-          ((file.size - result.compressedSize) / Math.max(1, file.size)) * 100
-        )
-      : 0;
+  const totalOriginalSize = files.reduce((acc, f) => acc + f.size, 0);
+  const totalCompressedSize = generatedFiles.reduce((acc, g) => acc + g.sizeBytes, 0);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-28">
-      <div className="lg:col-span-8">
-        {!file ? (
+      <div className="lg:col-span-8 space-y-5">
+        {files.length === 0 ? (
           <WorkspaceDropzone
-            title="Drop a PDF to compress locally"
-            subtitle="Choose between Extreme, Recommended, and Less compression presets with live size analytics."
+            multiple
+            title="Drop one or multiple PDFs to compress"
+            subtitle="Compress a single PDF or an entire batch with Extreme, Recommended, and Less presets."
+            sampleLabel="Load 2 sample PDFs"
             onFilesSelected={handleFileLoad}
             loading={loading}
           />
         ) : (
-          <div className="rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 p-6 space-y-6">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
-              <div className="flex items-center gap-4 min-w-0">
-                {file.previewUrl ? (
-                  <img
-                    src={file.previewUrl}
-                    alt={file.name}
-                    className="w-12 h-16 object-cover rounded-lg border border-slate-200 dark:border-slate-700 shrink-0"
-                  />
-                ) : (
-                  <div className="w-12 h-16 rounded-lg bg-indigo-500/12 flex items-center justify-center text-indigo-500 shrink-0">
-                    <FileText className="w-6 h-6" />
-                  </div>
-                )}
-                <div className="min-w-0">
-                  <h3 className="text-base font-semibold text-slate-900 dark:text-white truncate">
-                    {file.name}
+          <>
+            <div className="rounded-2xl bg-white dark:bg-[#121215] border border-black/[0.06] dark:border-white/[0.07] p-6 space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-black/[0.06] dark:border-white/[0.07]">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900 dark:text-[#F5F5F7]">
+                    Queued PDFs ({files.length})
                   </h3>
                   <p className="text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400 mt-0.5">
-                    {file.pageCount} pages · Original size: {formatBytes(file.size)}
+                    Combined original size: {formatBytes(totalOriginalSize)}
                   </p>
                 </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setFile(null);
-                  setResult(null);
-                }}
-                className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs text-slate-600 dark:text-slate-300 shrink-0"
-              >
-                Change file
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-              {(
-                [
-                  {
-                    id: 'extreme',
-                    title: 'Extreme',
-                    level: 'Smallest size',
-                    desc: 'Aggressive downsampling (0.42 JPEG quality). Best for email attachments and archiving.',
-                  },
-                  {
-                    id: 'recommended',
-                    title: 'Recommended',
-                    level: 'Balanced',
-                    desc: 'Optimal mix of sharp readability and reduced file size via object streams.',
-                  },
-                  {
-                    id: 'less',
-                    title: 'Less compression',
-                    level: 'High quality',
-                    desc: 'Preserves high-resolution imagery while compacting metadata and streams.',
-                  },
-                ] as const
-              ).map((item) => {
-                const active = preset === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => {
-                      setPreset(item.id);
-                      setResult(null);
-                    }}
-                    className={`p-4 rounded-xl border text-left transition flex flex-col justify-between ${
-                      active
-                        ? 'border-indigo-500 bg-indigo-500/10 ring-1 ring-indigo-500/30'
-                        : 'border-slate-200 dark:border-slate-800 hover:border-indigo-500/40'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <span className="text-sm font-semibold text-slate-900 dark:text-white">
-                          {item.title}
-                        </span>
-                        <span className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400">
-                          {item.level}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                        {item.desc}
-                      </p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            {progress && (
-              <div className="space-y-2">
-                <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">
-                  <span>Compressing pages locally...</span>
-                  <span>
-                    {progress.current} / {progress.total}
-                  </span>
-                </div>
-                <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all duration-150"
-                    style={{
-                      width: `${Math.round(
-                        (progress.current / Math.max(1, progress.total)) * 100
-                      )}%`,
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={addMoreRef}
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files) {
+                        handleFileLoad(Array.from(e.target.files));
+                        e.target.value = '';
+                      }
                     }}
                   />
+                  <button
+                    type="button"
+                    onClick={() => addMoreRef.current?.click()}
+                    className="px-3 py-1.5 rounded-xl bg-[#0071E3]/10 dark:bg-[#0A84FF]/15 text-[#0071E3] dark:text-[#409CFF] text-xs font-medium flex items-center gap-1.5"
+                  >
+                    <FilePlus2 className="w-3.5 h-3.5" strokeWidth={1.6} />
+                    Add PDFs
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFiles([]);
+                      setGeneratedFiles([]);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] text-xs text-slate-600 dark:text-slate-300 hover:text-rose-500"
+                  >
+                    Clear all
+                  </button>
                 </div>
               </div>
-            )}
 
-            {result && (
-              <div className="rounded-xl bg-emerald-500/8 border border-emerald-500/25 p-4 flex flex-wrap items-center justify-between gap-4">
-                <div className="flex items-start gap-3">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                      Compression complete
-                    </p>
-                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 font-mono tabular-nums">
-                      {formatBytes(file.size)} → {formatBytes(result.compressedSize)}{' '}
-                      {savingsPercent > 0
-                        ? `(${savingsPercent}% smaller)`
-                        : '(already tightly compacted)'}
-                    </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                      {result.method}
-                    </p>
+              <div className="space-y-2 max-h-56 overflow-y-auto">
+                {files.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between gap-3 p-3 rounded-xl bg-black/[0.02] dark:bg-white/[0.03] border border-black/[0.05] dark:border-white/[0.06]"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <FileText className="w-4 h-4 text-[#0071E3] dark:text-[#0A84FF] shrink-0" strokeWidth={1.6} />
+                      <div className="min-w-0">
+                        <div className="text-xs font-medium text-slate-900 dark:text-white truncate">
+                          {item.name}
+                        </div>
+                        <div className="text-[11px] font-mono tabular-nums text-slate-500">
+                          {item.pageCount} pages · {formatBytes(item.size)}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFiles((prev) => prev.filter((f) => f.id !== item.id));
+                        setGeneratedFiles([]);
+                      }}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500"
+                      title="Remove file"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" strokeWidth={1.6} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                {(
+                  [
+                    {
+                      id: 'extreme',
+                      title: 'Extreme',
+                      level: 'Smallest size',
+                      desc: 'Aggressive downsampling (0.42 JPEG quality). Best for email and archiving.',
+                    },
+                    {
+                      id: 'recommended',
+                      title: 'Recommended',
+                      level: 'Balanced',
+                      desc: 'Optimal mix of sharp readability and reduced file size via object streams.',
+                    },
+                    {
+                      id: 'less',
+                      title: 'Less compression',
+                      level: 'High quality',
+                      desc: 'Preserves high-resolution imagery while compacting metadata and streams.',
+                    },
+                  ] as const
+                ).map((item) => {
+                  const active = preset === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        setPreset(item.id);
+                        setGeneratedFiles([]);
+                      }}
+                      className={`p-4 rounded-xl border text-left transition flex flex-col justify-between ${
+                        active
+                          ? 'border-[#0A84FF] bg-[#0A84FF]/[0.08]'
+                          : 'border-black/[0.06] dark:border-white/[0.07] hover:border-[#0A84FF]/40'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <span className="text-sm font-semibold text-slate-900 dark:text-white">
+                            {item.title}
+                          </span>
+                          <span className="text-[11px] font-medium text-[#0071E3] dark:text-[#409CFF]">
+                            {item.level}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                          {item.desc}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {progress && (
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">
+                    <span>
+                      Compressing file {progress.fileIndex}/{progress.fileCount} (page{' '}
+                      {progress.current}/{progress.total})...
+                    </span>
+                    <span>
+                      {Math.round((progress.current / Math.max(1, progress.total)) * 100)}%
+                    </span>
+                  </div>
+                  <div className="w-full h-1.5 rounded-full bg-black/[0.06] dark:bg-white/[0.08] overflow-hidden">
+                    <div
+                      className="h-full bg-[#0A84FF] transition-all duration-150"
+                      style={{
+                        width: `${Math.round(
+                          (progress.current / Math.max(1, progress.total)) * 100
+                        )}%`,
+                      }}
+                    />
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleDownloadCompressed}
-                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 transition whitespace-nowrap"
-                >
-                  <Download className="w-4 h-4" /> Download Compressed PDF
-                </button>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+
+            <MultiOutputDownloadPanel
+              title="Compressed PDFs ready"
+              zipFilename={`kaagaz-compressed-${preset}.zip`}
+              items={generatedFiles}
+              onClear={() => setGeneratedFiles([])}
+            />
+          </>
         )}
       </div>
 
       <div className="lg:col-span-4">
-        <div className="rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 p-5 sticky top-20 space-y-5">
-          <div className="flex items-center gap-2.5 pb-3 border-b border-slate-200 dark:border-slate-800">
-            <Minimize2 className="w-4 h-4 text-fuchsia-500" />
-            <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
+        <div className="rounded-2xl bg-white dark:bg-[#121215] border border-black/[0.06] dark:border-white/[0.07] p-5 sticky top-20 space-y-5">
+          <div className="flex items-center gap-2.5 pb-3 border-b border-black/[0.06] dark:border-white/[0.07]">
+            <Minimize2 className="w-4 h-4 text-[#0071E3] dark:text-[#0A84FF]" strokeWidth={1.6} />
+            <h4 className="text-sm font-semibold text-slate-900 dark:text-[#F5F5F7]">
               Compression summary
             </h4>
           </div>
 
           <div className="space-y-2.5 text-xs">
             <div className="flex justify-between">
+              <span className="text-slate-500 dark:text-slate-400">Queued files</span>
+              <span className="font-mono font-semibold tabular-nums text-slate-900 dark:text-white">
+                {files.length}
+              </span>
+            </div>
+            <div className="flex justify-between">
               <span className="text-slate-500 dark:text-slate-400">Selected preset</span>
-              <span className="font-mono font-semibold capitalize text-indigo-600 dark:text-indigo-400">
+              <span className="font-mono font-semibold capitalize text-[#0071E3] dark:text-[#409CFF]">
                 {preset}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500 dark:text-slate-400">Original size</span>
+              <span className="text-slate-500 dark:text-slate-400">Original total</span>
               <span className="font-mono tabular-nums text-slate-900 dark:text-slate-100">
-                {file ? formatBytes(file.size) : '—'}
+                {files.length > 0 ? formatBytes(totalOriginalSize) : '—'}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500 dark:text-slate-400">Compressed size</span>
+              <span className="text-slate-500 dark:text-slate-400">Compressed total</span>
               <span className="font-mono font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
-                {result ? formatBytes(result.compressedSize) : '—'}
+                {generatedFiles.length > 0 ? formatBytes(totalCompressedSize) : '—'}
               </span>
             </div>
           </div>
 
           <button
             type="button"
-            onClick={result ? handleDownloadCompressed : handleRunCompression}
-            disabled={!file || compressing}
-            className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 text-white font-medium text-sm shadow-sm flex items-center justify-center gap-2 transition"
+            onClick={handleRunCompression}
+            disabled={files.length === 0 || compressing}
+            className="w-full py-2.5 px-4 rounded-xl bg-[#0071E3] dark:bg-[#0A84FF] hover:opacity-92 disabled:opacity-40 text-white font-medium text-sm flex items-center justify-center gap-2 transition"
           >
             {compressing ? (
               <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
+                <RefreshCw className="w-4 h-4 animate-spin" strokeWidth={1.6} />
                 Compressing...
-              </>
-            ) : result ? (
-              <>
-                <Download className="w-4 h-4" />
-                Download Compressed PDF
               </>
             ) : (
               <>
-                <Minimize2 className="w-4 h-4" />
-                Compress PDF Now
+                <Minimize2 className="w-4 h-4" strokeWidth={1.6} />
+                {files.length > 1
+                  ? `Compress ${files.length} PDFs`
+                  : 'Compress PDF Now'}
               </>
             )}
           </button>
@@ -1919,25 +2629,25 @@ export const CompressPdfWorkspace: React.FC = () => {
       </div>
 
       <FloatingActionBar
-        visible={Boolean(file)}
+        visible={files.length > 0}
         summary={
-          result
-            ? `${formatBytes(file?.size ?? 0)} → ${formatBytes(result.compressedSize)}`
-            : `Preset: ${preset}`
+          generatedFiles.length > 0
+            ? `${formatBytes(totalOriginalSize)} → ${formatBytes(totalCompressedSize)}`
+            : `${files.length} PDF${files.length === 1 ? '' : 's'} · ${preset}`
         }
-        detail={file?.name}
+        detail={files.length === 1 ? files[0].name : `${files.length} files queued`}
         actionLabel={
           compressing
             ? 'Compressing...'
-            : result
-              ? 'Download Compressed'
+            : files.length > 1
+              ? `Compress ${files.length} PDFs`
               : 'Compress Now'
         }
         busy={compressing}
-        onAction={result ? handleDownloadCompressed : handleRunCompression}
+        onAction={handleRunCompression}
         onReset={() => {
-          setFile(null);
-          setResult(null);
+          setFiles([]);
+          setGeneratedFiles([]);
         }}
       />
     </div>

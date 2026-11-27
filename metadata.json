@@ -1,6 +1,6 @@
 {
   "name": "PrismPDF Studio",
-  "description": "100% client-side, offline-capable all-in-one PDF productivity suite for merging, splitting, organizing, scanning, compressing, and converting PDF, Word, PowerPoint, Excel, HTML, Markdown, and image files directly in your browser.",
+  "description": "100% client-side all-in-one PDF productivity suite for merging, splitting, organizing, scanning, compressing, and converting PDF, Word, PowerPoint, Excel, HTML, Markdown, and image files directly in your browser.",
   "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

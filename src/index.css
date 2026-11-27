@@ -5,16 +5,42 @@
   --font-display: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-sans: "DM Sans", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Apple Obsidian Neutral & System Blue Palette */
+  --color-slate-950: #09090b;
+  --color-slate-900: #121215;
+  --color-slate-800: #222227;
+  --color-slate-700: #323239;
+  --color-slate-600: #52525b;
+  --color-slate-500: #71717a;
+  --color-slate-400: #a1a1aa;
+  --color-slate-300: #d4d4d8;
+  --color-slate-200: #e5e5ea;
+  --color-slate-100: #f2f2f7;
+  --color-slate-50: #f8f8fa;
+
+  --color-indigo-600: #0071e3;
+  --color-indigo-500: #0a84ff;
+  --color-indigo-400: #409cff;
+  --color-indigo-300: #70b5ff;
+
+  --color-violet-600: #0062cc;
+  --color-violet-500: #0a84ff;
+  --color-violet-400: #5ac8fa;
+  --color-violet-300: #8ad8ff;
 }
 
 @layer base {
   html {
     font-family: var(--font-sans);
     scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   h1, h2, h3, h4, .font-display {
     font-family: var(--font-display);
+    letter-spacing: -0.02em;
   }
 
   .tabular-nums {
@@ -22,10 +48,10 @@
   }
 }
 
-/* Subtle custom scrollbars */
+/* Minimalist Apple-style scrollbars */
 ::-webkit-scrollbar {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -33,12 +59,12 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.35);
+  background: rgba(161, 161, 170, 0.25);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(99, 102, 241, 0.55);
+  background: rgba(161, 161, 170, 0.45);
 }
 
 /* Rendered document typography preview */
@@ -87,7 +113,7 @@
   padding: 0.5rem 1rem;
   margin: 0.75rem 0;
   border-radius: 0.5rem;
-  background: rgba(99, 102, 241, 0.08);
+  background: rgba(10, 132, 255, 0.08);
   font-style: italic;
 }
 
@@ -100,19 +126,19 @@
 
 .doc-preview th,
 .doc-preview td {
-  border: 1px solid rgba(148, 163, 184, 0.3);
+  border: 1px solid rgba(161, 161, 170, 0.25);
   padding: 0.45rem 0.65rem;
   text-align: left;
 }
 
 .doc-preview th {
   font-weight: 600;
-  background: rgba(99, 102, 241, 0.08);
+  background: rgba(10, 132, 255, 0.07);
 }
 
 .doc-preview pre {
-  background: #0F172A;
-  color: #E2E8F0;
+  background: #0c0c0f;
+  color: #e4e4e7;
   padding: 0.85rem 1rem;
   border-radius: 0.65rem;
   overflow-x: auto;

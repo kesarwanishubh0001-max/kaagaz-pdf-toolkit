@@ -1,0 +1,132 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-android-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies & Capacitor Android
+        run: |
+          npm install --legacy-peer-deps
+          npm install @capacitor/core @capacitor/cli @capacitor/android --legacy-peer-deps
+
+      - name: Build self-contained web bundle (zero external network assets)
+        run: npx vite build --base=./
+
+      - name: Add and sync Capacitor Android project
+        run: |
+          npx cap add android
+          npx cap sync android
+
+      - name: Inject KAAGAZ native storage & print bridge
+        run: |
+          TARGET_DIR="android/app/src/main/java/com/kaagaz/pdftoolkit"
+          mkdir -p "$TARGET_DIR"
+          cp android-native/KaagazStorageBridge.java "$TARGET_DIR/KaagazStorageBridge.java"
+          cp android-native/MainActivity.java "$TARGET_DIR/MainActivity.java"
+
+      - name: Patch AndroidManifest.xml with storage permissions and Open-With intents
+        run: |
+          node -e '
+            const fs = require("fs");
+            const manifestPath = "android/app/src/main/AndroidManifest.xml";
+            let xml = fs.readFileSync(manifestPath, "utf8");
+
+            const permissions = [
+              "<uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\" />",
+              "<uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\" android:maxSdkVersion=\"29\" />",
+              "<uses-permission android:name=\"android.permission.MANAGE_EXTERNAL_STORAGE\" />",
+              "<uses-permission android:name=\"android.permission.READ_MEDIA_IMAGES\" />",
+              "<uses-permission android:name=\"android.permission.READ_MEDIA_VIDEO\" />",
+              "<uses-permission android:name=\"android.permission.READ_MEDIA_AUDIO\" />"
+            ];
+
+            for (const perm of permissions) {
+              const nameMatch = perm.match(/android:name="([^"]+)"/);
+              if (nameMatch && !xml.includes(nameMatch[1])) {
+                xml = xml.replace("<application", "    " + perm + "\n    <application");
+              }
+            }
+
+            if (!xml.includes("requestLegacyExternalStorage")) {
+              xml = xml.replace(
+                "<application",
+                "<application\n        android:requestLegacyExternalStorage=\"true\"\n        android:usesCleartextTraffic=\"true\""
+              );
+            }
+
+            const openWithIntent = `
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="application/msword" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                <data android:mimeType="application/vnd.ms-excel" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+                <data android:mimeType="application/vnd.ms-powerpoint" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.presentationml.presentation" />
+                <data android:mimeType="text/*" />
+                <data android:mimeType="image/*" />
+            </intent-filter>`;
+
+            if (!xml.includes("android.intent.action.VIEW")) {
+              xml = xml.replace("</activity>", openWithIntent + "\n        </activity>");
+            }
+
+            fs.writeFileSync(manifestPath, xml, "utf8");
+          '
+
+      - name: Build Android APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Stage APK artifact
+        run: |
+          mkdir -p release
+          cp android/app/build/outputs/apk/debug/app-debug.apk release/Kaagaz-Android.apk
+
+      - name: Upload Android APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kaagaz-Android-APK
+          path: release/Kaagaz-Android.apk
+
+      - name: Publish Android APK to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-v1.0.${{ github.run_number }}
+          name: KAAGAZ Android APK v1.0.${{ github.run_number }}
+          body: |
+            Self-contained Android APK build of **KAAGAZ** with full device storage access, direct document browsing, recently viewed file history, native Android printing, and zero internet dependency.
+          files: release/Kaagaz-Android.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

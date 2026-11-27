@@ -8,8 +8,6 @@ import {
   ArrowLeft,
   Pin,
   Clock,
-  Wifi,
-  WifiOff,
   Menu,
   X,
   Grid,
@@ -21,6 +19,7 @@ import {
   PenLine,
   Download,
   ChevronRight,
+  BookOpen,
 } from 'lucide-react';
 import {
   PDF_TOOLS,
@@ -30,8 +29,10 @@ import {
   PdfToolMeta,
 } from './data/tools';
 import { createSamplePdfFile, triggerDownload } from './utils/pdfEngine';
+import { isAndroidNativeApp } from './utils/mobileStorageBridge';
 import { ToolIcon } from './components/ToolIcon';
 import { CommandPalette } from './components/CommandPalette';
+import { UniversalDocumentViewer } from './components/UniversalDocumentViewer';
 import {
   MergePdfWorkspace,
   SplitPdfWorkspace,
@@ -77,29 +78,29 @@ import {
 } from './components/SecurityAndWorkflowWorkspaces';
 
 const DEFAULT_PINNED: ToolId[] = [
+  'split-pdf',
   'merge-pdf',
   'compress-pdf',
-  'jpg-to-pdf',
   'pdf-to-word',
 ];
 
 function getCategoryIcon(cat: ToolCategory) {
-  const cls = 'w-4 h-4 shrink-0';
+  const props = { className: 'w-4 h-4 shrink-0', strokeWidth: 1.6 };
   switch (cat) {
     case 'All':
-      return <Grid className={cls} />;
+      return <Grid {...props} />;
     case 'Organize':
-      return <FolderKanban className={cls} />;
+      return <FolderKanban {...props} />;
     case 'Optimize':
-      return <Gauge className={cls} />;
+      return <Gauge {...props} />;
     case 'Convert':
-      return <ArrowRightLeft className={cls} />;
+      return <ArrowRightLeft {...props} />;
     case 'Edit PDF':
-      return <PenLine className={cls} />;
+      return <PenLine {...props} />;
     case 'Security':
-      return <Shield className={cls} />;
+      return <Shield {...props} />;
     case 'Workflows':
-      return <Workflow className={cls} />;
+      return <Workflow {...props} />;
   }
 }
 
@@ -123,10 +124,10 @@ export default function App() {
     'all' | 'to-pdf' | 'from-pdf'
   >('all');
   const [inlineSearch, setInlineSearch] = useState('');
-  const [activeToolId, setActiveToolId] = useState<ToolId | null>(null);
-  const [isOnline, setIsOnline] = useState<boolean>(() =>
-    typeof navigator !== 'undefined' ? navigator.onLine : true
+  const [activeView, setActiveView] = useState<'tools' | 'viewer'>(() =>
+    isAndroidNativeApp() ? 'viewer' : 'tools'
   );
+  const [activeToolId, setActiveToolId] = useState<ToolId | null>(null);
 
   const [pinnedIds, setPinnedIds] = useState<ToolId[]>(() => {
     try {
@@ -169,19 +170,18 @@ export default function App() {
     }
   }, [darkMode]);
 
-  // Real online/offline listener
+  // Switch to Universal Document Viewer automatically when Android opens a file via Open-With intent
   useEffect(() => {
-    const onOnline = () => setIsOnline(true);
-    const onOffline = () => setIsOnline(false);
-    window.addEventListener('online', onOnline);
-    window.addEventListener('offline', onOffline);
-    return () => {
-      window.removeEventListener('online', onOnline);
-      window.removeEventListener('offline', onOffline);
+    const onIncomingFile = () => {
+      setActiveView('viewer');
+      setActiveToolId(null);
+      setMobileMenuOpen(false);
     };
+    window.addEventListener('kaagaz-incoming-file', onIncomingFile);
+    return () => window.removeEventListener('kaagaz-incoming-file', onIncomingFile);
   }, []);
 
-  // Global keyboard shortcuts (Cmd/Ctrl+K and dashboard number shortcuts)
+  // Global keyboard shortcuts (Cmd/Ctrl+K and dashboard shortcuts)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -200,7 +200,15 @@ export default function App() {
           target.tagName === 'TEXTAREA' ||
           target.isContentEditable);
 
-      if (!isTyping && !paletteOpen && !activeToolId && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (
+        !isTyping &&
+        !paletteOpen &&
+        activeView === 'tools' &&
+        !activeToolId &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey
+      ) {
         const matched = PDF_TOOLS.find(
           (t) => t.shortcut.toLowerCase() === e.key.toLowerCase()
         );
@@ -212,9 +220,10 @@ export default function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [mobileMenuOpen, paletteOpen, activeToolId]);
+  }, [mobileMenuOpen, paletteOpen, activeView, activeToolId]);
 
   const openTool = (id: ToolId) => {
+    setActiveView('tools');
     setActiveToolId(id);
     setMobileMenuOpen(false);
     setRecentIds((prev) => {
@@ -226,6 +235,12 @@ export default function App() {
       }
       return next;
     });
+  };
+
+  const openDocumentViewer = () => {
+    setActiveView('viewer');
+    setActiveToolId(null);
+    setMobileMenuOpen(false);
   };
 
   const togglePin = (id: ToolId, e?: React.MouseEvent) => {
@@ -244,7 +259,7 @@ export default function App() {
   };
 
   const handleDownloadSamplePdf = async () => {
-    const sample = await createSamplePdfFile('KAAGAZ-Sample-Report.pdf', 6);
+    const sample = await createSamplePdfFile('KAAGAZ-Sample-Report.pdf', 12);
     triggerDownload(sample, sample.name);
   };
 
@@ -376,41 +391,40 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 flex">
+    <div className="min-h-screen bg-[#F5F5F7] dark:bg-[#08080A] text-[#1D1D1F] dark:text-[#F5F5F7] flex">
       {/* Desktop Left Collapsible Sidebar */}
       <aside
-        className={`hidden lg:flex flex-col shrink-0 border-r border-slate-200/80 dark:border-slate-800/90 bg-white/85 dark:bg-slate-950/55 backdrop-blur-xl sticky top-0 h-screen transition-all duration-200 ${
-          sidebarCollapsed ? 'w-[76px]' : 'w-[260px]'
+        className={`hidden lg:flex flex-col shrink-0 border-r border-black/[0.06] dark:border-white/[0.07] bg-white/85 dark:bg-[#0C0C0F]/90 backdrop-blur-2xl sticky top-0 h-screen transition-[width] duration-200 ${
+          sidebarCollapsed ? 'w-[74px]' : 'w-[252px]'
         }`}
       >
         {/* Brand Header */}
-        <div className="h-16 px-4 flex items-center justify-between border-b border-slate-200/70 dark:border-slate-800/80">
+        <div className="h-16 px-4 flex items-center justify-between border-b border-black/[0.05] dark:border-white/[0.06]">
           <button
             type="button"
             onClick={() => {
+              setActiveView('tools');
               setActiveToolId(null);
               setActiveCategory('All');
             }}
             className="flex items-center gap-2.5 min-w-0 text-left"
           >
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white shadow-sm shadow-indigo-500/25 shrink-0">
+            <div className="w-8 h-8 rounded-[10px] bg-[#1D1D1F] dark:bg-[#F5F5F7] text-white dark:text-[#08080A] flex items-center justify-center shrink-0">
               <svg
                 viewBox="0 0 24 24"
                 fill="none"
                 className="w-4 h-4"
                 stroke="currentColor"
-                strokeWidth="2.2"
+                strokeWidth="1.8"
                 strokeLinecap="round"
                 strokeLinejoin="round"
               >
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="9" y1="13" x2="15" y2="13" />
-                <line x1="9" y1="17" x2="13" y2="17" />
+                <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
+                <polyline points="14 2 14 7 19 7" />
               </svg>
             </div>
             {!sidebarCollapsed && (
-              <span className="font-display font-bold text-base tracking-[0.06em] text-slate-900 dark:text-white whitespace-nowrap truncate">
+              <span className="font-display font-semibold text-[15px] tracking-[0.12em] text-[#1D1D1F] dark:text-[#F5F5F7] whitespace-nowrap truncate">
                 KAAGAZ
               </span>
             )}
@@ -419,14 +433,14 @@ export default function App() {
           <button
             type="button"
             onClick={() => setSidebarCollapsed((c) => !c)}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition shrink-0"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition shrink-0"
             title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
             {sidebarCollapsed ? (
-              <PanelLeftOpen className="w-4 h-4" />
+              <PanelLeftOpen className="w-4 h-4" strokeWidth={1.6} />
             ) : (
-              <PanelLeftClose className="w-4 h-4" />
+              <PanelLeftClose className="w-4 h-4" strokeWidth={1.6} />
             )}
           </button>
         </div>
@@ -436,60 +450,105 @@ export default function App() {
           <button
             type="button"
             onClick={() => setPaletteOpen(true)}
-            className={`w-full flex items-center rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/90 hover:border-indigo-500/50 text-slate-500 dark:text-slate-400 transition ${
+            className={`w-full flex items-center rounded-xl border border-black/[0.07] dark:border-white/[0.08] bg-black/[0.02] dark:bg-white/[0.03] hover:border-black/[0.15] dark:hover:border-white/[0.16] text-slate-500 dark:text-slate-400 transition ${
               sidebarCollapsed ? 'justify-center p-2.5' : 'justify-between px-3 py-2'
             }`}
             title="Search tools (Cmd/Ctrl + K)"
           >
             <span className="flex items-center gap-2 text-xs font-medium">
-              <Search className="w-4 h-4 text-indigo-500 shrink-0" />
-              {!sidebarCollapsed && <span className="whitespace-nowrap">Quick search</span>}
+              <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" strokeWidth={1.6} />
+              {!sidebarCollapsed && <span className="whitespace-nowrap">Search tools</span>}
             </span>
             {!sidebarCollapsed && (
-              <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400">
+              <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-black/[0.04] dark:bg-white/[0.06] text-slate-500 dark:text-slate-400">
                 ⌘K
               </kbd>
             )}
           </button>
         </div>
 
-        {/* Category Navigation */}
-        <nav className="flex-1 overflow-y-auto px-3 py-1 space-y-1">
+        {/* Navigation: Standalone Features + PDF Library */}
+        <nav className="flex-1 overflow-y-auto px-3 py-1 space-y-0.5">
           {!sidebarCollapsed && (
-            <div className="px-2.5 pb-1 text-[11px] font-medium text-slate-400 dark:text-slate-500">
-              Categories
+            <div className="px-2.5 pb-1.5 pt-1 text-[11px] font-medium text-slate-400 dark:text-slate-500">
+              Reader
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={openDocumentViewer}
+            title="Universal Document Viewer"
+            className={`w-full flex items-center rounded-xl text-[13px] font-medium transition mb-3 ${
+              sidebarCollapsed
+                ? 'justify-center p-2.5'
+                : 'justify-between px-3 py-2'
+            } ${
+              activeView === 'viewer'
+                ? 'bg-[#0071E3] dark:bg-[#0A84FF] text-white'
+                : 'text-slate-700 dark:text-slate-300 bg-black/[0.025] dark:bg-white/[0.03] hover:bg-black/[0.05] dark:hover:bg-white/[0.06] hover:text-[#1D1D1F] dark:hover:text-white'
+            }`}
+          >
+            <span className="flex items-center gap-2.5 min-w-0">
+              <BookOpen
+                className={`w-4 h-4 shrink-0 ${
+                  activeView === 'viewer' ? 'text-white' : 'text-[#0071E3] dark:text-[#0A84FF]'
+                }`}
+                strokeWidth={1.6}
+              />
+              {!sidebarCollapsed && (
+                <span className="truncate whitespace-nowrap">Document Viewer</span>
+              )}
+            </span>
+            {!sidebarCollapsed && (
+              <span
+                className={`text-[10px] font-mono ${
+                  activeView === 'viewer' ? 'text-white/80' : 'text-slate-400 dark:text-slate-500'
+                }`}
+              >
+                All
+              </span>
+            )}
+          </button>
+
+          {!sidebarCollapsed && (
+            <div className="px-2.5 pb-1.5 pt-1 text-[11px] font-medium text-slate-400 dark:text-slate-500">
+              PDF Toolkit
             </div>
           )}
           {CATEGORIES.map((category) => {
-            const isSelected = !activeToolId && activeCategory === category;
+            const isSelected =
+              activeView === 'tools' && !activeToolId && activeCategory === category;
             return (
               <button
                 key={category}
                 type="button"
                 onClick={() => {
+                  setActiveView('tools');
                   setActiveToolId(null);
                   setActiveCategory(category);
                   setConvertDirectionFilter('all');
                 }}
                 title={category}
-                className={`w-full flex items-center rounded-xl text-sm font-medium transition ${
+                className={`w-full flex items-center rounded-xl text-[13px] font-medium transition ${
                   sidebarCollapsed
                     ? 'justify-center p-2.5'
                     : 'justify-between px-3 py-2'
                 } ${
                   isSelected
-                    ? 'bg-indigo-500/12 text-indigo-600 dark:text-indigo-300'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
+                    ? 'bg-black/[0.06] dark:bg-white/[0.09] text-[#1D1D1F] dark:text-white'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-black/[0.03] dark:hover:bg-white/[0.04] hover:text-[#1D1D1F] dark:hover:text-white'
                 }`}
               >
                 <span className="flex items-center gap-2.5 min-w-0">
-                  {getCategoryIcon(category)}
+                  <span className={isSelected ? 'text-[#0071E3] dark:text-[#0A84FF]' : ''}>
+                    {getCategoryIcon(category)}
+                  </span>
                   {!sidebarCollapsed && (
                     <span className="truncate whitespace-nowrap">{category}</span>
                   )}
                 </span>
                 {!sidebarCollapsed && (
-                  <span className="text-xs font-mono tabular-nums opacity-70">
+                  <span className="text-[11px] font-mono tabular-nums opacity-60">
                     {categoryCounts[category]}
                   </span>
                 )}
@@ -498,49 +557,25 @@ export default function App() {
           })}
         </nav>
 
-        {/* Sidebar Footer: Online/Offline Status Pill + Theme Toggle */}
-        <div className="p-3 border-t border-slate-200/70 dark:border-slate-800/80 space-y-2">
-          <div
-            className={`flex items-center rounded-xl border text-xs font-medium ${
-              sidebarCollapsed ? 'justify-center p-2' : 'justify-between px-3 py-2'
-            } ${
-              isOnline
-                ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                : 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-            }`}
-            title={
-              isOnline
-                ? 'Online — all tools also run 100% offline'
-                : 'Offline Mode — local PDF engine active'
-            }
-          >
-            <span className="flex items-center gap-2 whitespace-nowrap">
-              {isOnline ? (
-                <Wifi className="w-3.5 h-3.5 shrink-0" />
-              ) : (
-                <WifiOff className="w-3.5 h-3.5 shrink-0" />
-              )}
-              {!sidebarCollapsed && (
-                <span>{isOnline ? 'Offline Ready' : 'Offline Mode'}</span>
-              )}
-            </span>
-          </div>
-
+        {/* Sidebar Footer: Minimal Theme Toggle */}
+        <div className="p-3 border-t border-black/[0.05] dark:border-white/[0.06]">
           <button
             type="button"
             onClick={() => setDarkMode((d) => !d)}
-            className={`w-full flex items-center rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-300 transition ${
+            className={`w-full flex items-center rounded-xl border border-black/[0.06] dark:border-white/[0.08] bg-black/[0.02] dark:bg-white/[0.03] hover:bg-black/[0.05] dark:hover:bg-white/[0.06] text-xs font-medium text-slate-700 dark:text-slate-300 transition ${
               sidebarCollapsed ? 'justify-center p-2.5' : 'justify-between px-3 py-2'
             }`}
             title="Toggle Light / Dark Mode"
           >
             <span className="flex items-center gap-2 whitespace-nowrap">
               {darkMode ? (
-                <Sun className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <Sun className="w-3.5 h-3.5 text-amber-400 shrink-0" strokeWidth={1.6} />
               ) : (
-                <Moon className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                <Moon className="w-3.5 h-3.5 text-[#0071E3] shrink-0" strokeWidth={1.6} />
               )}
-              {!sidebarCollapsed && <span>{darkMode ? 'Light mode' : 'Dark mode'}</span>}
+              {!sidebarCollapsed && (
+                <span>{darkMode ? 'Light appearance' : 'Dark appearance'}</span>
+              )}
             </span>
           </button>
         </div>
@@ -549,36 +584,54 @@ export default function App() {
       {/* Mobile Drawer */}
       {mobileMenuOpen && (
         <div
-          className="fixed inset-0 z-50 lg:hidden bg-slate-950/60 backdrop-blur-sm"
+          className="fixed inset-0 z-50 lg:hidden bg-black/60 backdrop-blur-md"
           onClick={() => setMobileMenuOpen(false)}
         >
           <div
-            className="w-72 h-full bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 p-4 flex flex-col justify-between"
+            className="w-72 h-full bg-white dark:bg-[#0C0C0F] border-r border-black/[0.06] dark:border-white/[0.08] p-4 flex flex-col justify-between"
             onClick={(e) => e.stopPropagation()}
           >
             <div>
-              <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-200 dark:border-slate-800">
-                <span className="font-display font-bold text-base tracking-[0.06em] text-slate-900 dark:text-white">
+              <div className="flex items-center justify-between pb-4 mb-4 border-b border-black/[0.06] dark:border-white/[0.08]">
+                <span className="font-display font-semibold text-base tracking-[0.12em] text-[#1D1D1F] dark:text-white">
                   KAAGAZ
                 </span>
                 <button
                   type="button"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  className="p-2 rounded-lg text-slate-500 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
                   aria-label="Close navigation menu"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-4 h-4" strokeWidth={1.6} />
                 </button>
               </div>
 
-              <div className="space-y-1">
+              <div className="space-y-0.5">
+                <button
+                  type="button"
+                  onClick={openDocumentViewer}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium mb-2 ${
+                    activeView === 'viewer'
+                      ? 'bg-[#0071E3] dark:bg-[#0A84FF] text-white'
+                      : 'bg-black/[0.03] dark:bg-white/[0.04] text-[#1D1D1F] dark:text-white'
+                  }`}
+                >
+                  <span className="flex items-center gap-2.5">
+                    <BookOpen className="w-4 h-4" strokeWidth={1.6} />
+                    Document Viewer
+                  </span>
+                  <span className="text-xs font-mono opacity-75">All</span>
+                </button>
+
                 {CATEGORIES.map((category) => {
-                  const isSelected = !activeToolId && activeCategory === category;
+                  const isSelected =
+                    activeView === 'tools' && !activeToolId && activeCategory === category;
                   return (
                     <button
                       key={category}
                       type="button"
                       onClick={() => {
+                        setActiveView('tools');
                         setActiveToolId(null);
                         setActiveCategory(category);
                         setConvertDirectionFilter('all');
@@ -586,7 +639,7 @@ export default function App() {
                       }}
                       className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium ${
                         isSelected
-                          ? 'bg-indigo-500/12 text-indigo-600 dark:text-indigo-300'
+                          ? 'bg-black/[0.06] dark:bg-white/[0.09] text-[#1D1D1F] dark:text-white'
                           : 'text-slate-600 dark:text-slate-400'
                       }`}
                     >
@@ -594,7 +647,7 @@ export default function App() {
                         {getCategoryIcon(category)}
                         {category}
                       </span>
-                      <span className="text-xs font-mono tabular-nums opacity-70">
+                      <span className="text-xs font-mono tabular-nums opacity-60">
                         {categoryCounts[category]}
                       </span>
                     </button>
@@ -603,28 +656,18 @@ export default function App() {
               </div>
             </div>
 
-            <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-2">
-              <div
-                className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium ${
-                  isOnline
-                    ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                    : 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                }`}
-              >
-                {isOnline ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
-                <span>{isOnline ? 'Offline Ready' : 'Offline Mode'}</span>
-              </div>
+            <div className="pt-4 border-t border-black/[0.06] dark:border-white/[0.08]">
               <button
                 type="button"
                 onClick={() => setDarkMode((d) => !d)}
-                className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-700 dark:text-slate-300"
+                className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border border-black/[0.06] dark:border-white/[0.08] text-xs font-medium text-slate-700 dark:text-slate-300"
               >
                 {darkMode ? (
-                  <Sun className="w-4 h-4 text-amber-400" />
+                  <Sun className="w-4 h-4 text-amber-400" strokeWidth={1.6} />
                 ) : (
-                  <Moon className="w-4 h-4 text-indigo-500" />
+                  <Moon className="w-4 h-4 text-[#0071E3]" strokeWidth={1.6} />
                 )}
-                Switch to {darkMode ? 'Light mode' : 'Dark mode'}
+                Switch to {darkMode ? 'Light appearance' : 'Dark appearance'}
               </button>
             </div>
           </div>
@@ -634,18 +677,35 @@ export default function App() {
       {/* Main Content Shell */}
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Top Contextual Header */}
-        <header className="sticky top-0 z-20 h-16 px-4 sm:px-6 lg:px-8 border-b border-slate-200/80 dark:border-slate-800/80 bg-[#F8FAFC]/90 dark:bg-[#0F172A]/90 backdrop-blur-md flex items-center justify-between gap-4">
+        <header className="sticky top-0 z-20 h-16 px-4 sm:px-6 lg:px-8 border-b border-black/[0.05] dark:border-white/[0.06] bg-[#F5F5F7]/80 dark:bg-[#08080A]/80 backdrop-blur-2xl flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800"
+              className="lg:hidden p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-black/[0.05] dark:hover:bg-white/[0.06]"
               aria-label="Open menu"
             >
-              <Menu className="w-5 h-5" />
+              <Menu className="w-5 h-5" strokeWidth={1.6} />
             </button>
 
-            {activeTool ? (
+            {activeView === 'viewer' ? (
+              <div className="flex items-center gap-2 text-sm min-w-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveView('tools');
+                    setActiveToolId(null);
+                  }}
+                  className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition whitespace-nowrap"
+                >
+                  KAAGAZ
+                </button>
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" strokeWidth={1.6} />
+                <span className="font-medium text-[#1D1D1F] dark:text-[#F5F5F7] truncate">
+                  Document Viewer
+                </span>
+              </div>
+            ) : activeTool ? (
               <div className="flex items-center gap-2 text-sm min-w-0">
                 <button
                   type="button"
@@ -654,7 +714,7 @@ export default function App() {
                 >
                   Tools
                 </button>
-                <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" strokeWidth={1.6} />
                 <button
                   type="button"
                   onClick={() => {
@@ -665,19 +725,19 @@ export default function App() {
                 >
                   {activeTool.category}
                 </button>
-                <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0 hidden sm:inline" />
-                <span className="font-semibold text-slate-900 dark:text-white truncate">
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0 hidden sm:inline" strokeWidth={1.6} />
+                <span className="font-medium text-[#1D1D1F] dark:text-[#F5F5F7] truncate">
                   {activeTool.title}
                 </span>
               </div>
             ) : (
               <div className="flex items-center gap-2 text-sm min-w-0">
-                <span className="font-semibold text-slate-900 dark:text-white whitespace-nowrap">
+                <span className="font-medium text-[#1D1D1F] dark:text-[#F5F5F7] whitespace-nowrap">
                   {activeCategory === 'All' ? 'All Tools' : activeCategory}
                 </span>
                 <span className="text-slate-400 hidden sm:inline">·</span>
                 <span className="text-xs text-slate-500 dark:text-slate-400 hidden sm:inline truncate">
-                  KAAGAZ · 33 Offline Client-Side PDF Tools
+                  33 Private PDF Tools
                 </span>
               </div>
             )}
@@ -687,11 +747,11 @@ export default function App() {
             <button
               type="button"
               onClick={() => setPaletteOpen(true)}
-              className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-indigo-500/50 text-xs font-medium text-slate-600 dark:text-slate-300 flex items-center gap-2 transition whitespace-nowrap"
+              className="px-3 py-1.5 rounded-xl border border-black/[0.07] dark:border-white/[0.09] bg-white/80 dark:bg-white/[0.04] hover:border-black/[0.15] dark:hover:border-white/[0.18] text-xs font-medium text-slate-600 dark:text-slate-300 flex items-center gap-2 transition whitespace-nowrap"
             >
-              <Search className="w-3.5 h-3.5 text-indigo-500" />
-              <span className="hidden sm:inline">Jump to tool</span>
-              <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+              <Search className="w-3.5 h-3.5 text-slate-400" strokeWidth={1.6} />
+              <span className="hidden sm:inline">Quick jump</span>
+              <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-black/[0.04] dark:bg-white/[0.07] text-slate-500 dark:text-slate-400">
                 ⌘K
               </kbd>
             </button>
@@ -699,52 +759,54 @@ export default function App() {
             <button
               type="button"
               onClick={handleDownloadSamplePdf}
-              className="hidden md:flex px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-medium items-center gap-1.5 shadow-sm transition whitespace-nowrap"
+              className="hidden md:flex px-3.5 py-1.5 rounded-xl bg-[#0071E3] dark:bg-[#0A84FF] hover:opacity-92 text-white text-xs font-medium items-center gap-1.5 transition whitespace-nowrap"
             >
-              <Download className="w-3.5 h-3.5" />
+              <Download className="w-3.5 h-3.5" strokeWidth={1.7} />
               Sample PDF
             </button>
 
             <button
               type="button"
               onClick={() => setDarkMode((d) => !d)}
-              className="lg:hidden p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300"
+              className="lg:hidden p-2 rounded-xl border border-black/[0.07] dark:border-white/[0.09] bg-white dark:bg-white/[0.04] text-slate-600 dark:text-slate-300"
               aria-label="Toggle theme"
             >
               {darkMode ? (
-                <Sun className="w-4 h-4 text-amber-400" />
+                <Sun className="w-4 h-4 text-amber-400" strokeWidth={1.6} />
               ) : (
-                <Moon className="w-4 h-4 text-indigo-500" />
+                <Moon className="w-4 h-4 text-[#0071E3]" strokeWidth={1.6} />
               )}
             </button>
           </div>
         </header>
 
         {/* Viewport Body */}
-        <main className="flex-1 w-full max-w-[1320px] mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 lg:pb-12">
-          {activeTool ? (
+        <main className="flex-1 w-full max-w-[1320px] mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24 lg:pb-14">
+          {activeView === 'viewer' ? (
+            <UniversalDocumentViewer />
+          ) : activeTool ? (
             /* Split Workspace Header + Active Tool */
             <div className="space-y-6">
-              <div className="flex flex-wrap items-center justify-between gap-4 pb-5 border-b border-slate-200/80 dark:border-slate-800/80">
+              <div className="flex flex-wrap items-center justify-between gap-4 pb-6 border-b border-black/[0.06] dark:border-white/[0.07]">
                 <div className="flex items-center gap-4 min-w-0">
                   <button
                     type="button"
                     onClick={() => setActiveToolId(null)}
-                    className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-indigo-500/50 text-slate-600 dark:text-slate-300 transition shrink-0"
+                    className="p-2.5 rounded-xl border border-black/[0.07] dark:border-white/[0.09] bg-white dark:bg-[#121215] hover:border-black/[0.18] dark:hover:border-white/[0.18] text-slate-600 dark:text-slate-300 transition shrink-0"
                     title="Back to all tools"
                   >
-                    <ArrowLeft className="w-4 h-4" />
+                    <ArrowLeft className="w-4 h-4" strokeWidth={1.6} />
                   </button>
                   <div
-                    className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${activeTool.badgeClass}`}
+                    className={`w-11 h-11 rounded-[13px] flex items-center justify-center shrink-0 ${activeTool.badgeClass}`}
                   >
                     <ToolIcon name={activeTool.iconName} className="w-5 h-5" />
                   </div>
                   <div className="min-w-0">
-                    <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white truncate">
+                    <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-[#1D1D1F] dark:text-[#F5F5F7] truncate">
                       {activeTool.title}
                     </h1>
-                    <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 truncate">
+                    <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 truncate mt-0.5">
                       {activeTool.description}
                     </p>
                   </div>
@@ -755,11 +817,11 @@ export default function App() {
                   onClick={() => togglePin(activeTool.id)}
                   className={`px-3.5 py-2 rounded-xl border text-xs font-medium flex items-center gap-1.5 transition whitespace-nowrap ${
                     pinnedIds.includes(activeTool.id)
-                      ? 'border-indigo-500/40 bg-indigo-500/10 text-indigo-600 dark:text-indigo-300'
-                      : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      ? 'border-[#0A84FF]/40 bg-[#0A84FF]/10 text-[#0071E3] dark:text-[#0A84FF]'
+                      : 'border-black/[0.07] dark:border-white/[0.09] bg-white dark:bg-[#121215] text-slate-600 dark:text-slate-400 hover:text-[#1D1D1F] dark:hover:text-white'
                   }`}
                 >
-                  <Pin className="w-3.5 h-3.5" />
+                  <Pin className="w-3.5 h-3.5" strokeWidth={1.6} />
                   {pinnedIds.includes(activeTool.id) ? 'Pinned' : 'Pin tool'}
                 </button>
               </div>
@@ -767,44 +829,59 @@ export default function App() {
               {renderWorkspace(activeTool.id)}
             </div>
           ) : (
-            /* Bento Dashboard View */
-            <div className="space-y-8">
+            /* Apple-Minimal Bento Dashboard View */
+            <div className="space-y-9">
               {/* Hero Summary + Search Row */}
-              <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+              <div className="flex flex-col md:flex-row md:items-end justify-between gap-5">
                 <div className="max-w-2xl">
-                  <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white text-balance">
-                    KAAGAZ — Private, offline PDF workspace
+                  <h1 className="text-2xl sm:text-4xl font-semibold tracking-[-0.03em] text-[#1D1D1F] dark:text-[#F5F5F7] text-balance">
+                    KAAGAZ Studio
                   </h1>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-1.5">
-                    33 client-side tools to organize, optimize, OCR, convert, edit, sign, protect, redact, compare, and automate PDFs directly in browser memory.
+                  <p className="text-sm sm:text-[15px] text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
+                    33 precision PDF tools and a Universal Document Viewer to read, split, merge, organize, optimize, convert, edit, and secure documents directly in your browser.
                   </p>
                 </div>
 
-                <div className="relative w-full md:w-72 shrink-0">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="text"
-                    value={inlineSearch}
-                    onChange={(e) => setInlineSearch(e.target.value)}
-                    placeholder="Filter tools by name or format..."
-                    className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
-                  />
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={openDocumentViewer}
+                    className="px-4 py-2.5 rounded-xl bg-white dark:bg-[#121215] border border-black/[0.08] dark:border-white/[0.1] hover:border-[#0071E3] dark:hover:border-[#0A84FF] text-[#1D1D1F] dark:text-[#F5F5F7] text-xs font-medium flex items-center justify-center gap-2 transition whitespace-nowrap shrink-0"
+                  >
+                    <BookOpen className="w-4 h-4 text-[#0071E3] dark:text-[#0A84FF]" strokeWidth={1.6} />
+                    Universal Viewer
+                  </button>
+                  <div className="relative w-full sm:w-64 shrink-0">
+                    <Search
+                      className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                      strokeWidth={1.6}
+                    />
+                    <input
+                      type="text"
+                      value={inlineSearch}
+                      onChange={(e) => setInlineSearch(e.target.value)}
+                      placeholder="Filter tools or formats..."
+                      className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-white dark:bg-[#121215] border border-black/[0.07] dark:border-white/[0.08] text-sm text-[#1D1D1F] dark:text-[#F5F5F7] placeholder-slate-400 focus:outline-none focus:border-[#0A84FF]"
+                    />
+                  </div>
                 </div>
               </div>
 
-              {/* Recent / Pinned Quick Bar */}
+              {/* Recent / Pinned Quick Rail */}
               {quickBarTools.length > 0 && !inlineSearch.trim() && (
-                <section aria-label="Recent and pinned tools" className="space-y-2.5">
+                <section aria-label="Recent and pinned tools" className="space-y-3">
                   <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                     <span className="flex items-center gap-1.5 font-medium">
                       {recentIds.length > 0 ? (
-                        <Clock className="w-3.5 h-3.5 text-indigo-500" />
+                        <Clock className="w-3.5 h-3.5 text-slate-400" strokeWidth={1.6} />
                       ) : (
-                        <Pin className="w-3.5 h-3.5 text-indigo-500" />
+                        <Pin className="w-3.5 h-3.5 text-slate-400" strokeWidth={1.6} />
                       )}
-                      {recentIds.length > 0 ? 'Recent & Pinned Tools' : 'Pinned Tools'}
+                      {recentIds.length > 0 ? 'Recent & Pinned' : 'Pinned'}
                     </span>
-                    <span className="hidden sm:inline">Press ⌘K to jump anywhere</span>
+                    <span className="hidden sm:inline text-slate-400 dark:text-slate-500">
+                      Press ⌘K to jump anywhere
+                    </span>
                   </div>
 
                   <div className="flex items-center gap-2.5 overflow-x-auto pb-1">
@@ -813,17 +890,17 @@ export default function App() {
                         key={tool.id}
                         type="button"
                         onClick={() => openTool(tool.id)}
-                        className="group flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 hover:border-indigo-500/50 transition shrink-0"
+                        className="group flex items-center gap-2.5 px-3 py-2 rounded-xl bg-white dark:bg-[#121215] border border-black/[0.06] dark:border-white/[0.07] hover:border-black/[0.16] dark:hover:border-white/[0.18] transition shrink-0"
                       >
                         <div
                           className={`w-7 h-7 rounded-lg flex items-center justify-center ${tool.badgeClass}`}
                         >
                           <ToolIcon name={tool.iconName} className="w-3.5 h-3.5" />
                         </div>
-                        <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 whitespace-nowrap">
+                        <span className="text-xs font-medium text-[#1D1D1F] dark:text-[#F5F5F7] whitespace-nowrap">
                           {tool.title}
                         </span>
-                        <kbd className="text-[10px] font-mono text-slate-400">
+                        <kbd className="text-[10px] font-mono text-slate-400 dark:text-slate-500">
                           {tool.shortcut}
                         </kbd>
                       </button>
@@ -832,9 +909,9 @@ export default function App() {
                 </section>
               )}
 
-              {/* Category Filter Strip (visible on mobile & tablet, plus Convert sub-tabs on desktop) */}
+              {/* Minimal Segmented Category Strip */}
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                <div className="flex items-center gap-1 p-1 rounded-xl bg-black/[0.04] dark:bg-white/[0.04] border border-black/[0.05] dark:border-white/[0.06] overflow-x-auto">
                   {CATEGORIES.map((cat) => {
                     const active = activeCategory === cat;
                     return (
@@ -847,8 +924,8 @@ export default function App() {
                         }}
                         className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition ${
                           active
-                            ? 'bg-indigo-600 text-white shadow-sm'
-                            : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                            ? 'bg-white dark:bg-[#1F1F24] text-[#1D1D1F] dark:text-white shadow-xs'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-[#1D1D1F] dark:hover:text-white'
                         }`}
                       >
                         {cat}
@@ -858,7 +935,7 @@ export default function App() {
                 </div>
 
                 {activeCategory === 'Convert' && (
-                  <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-200/70 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center gap-1 p-1 rounded-xl bg-black/[0.04] dark:bg-white/[0.04] border border-black/[0.05] dark:border-white/[0.06]">
                     {(
                       [
                         { id: 'all', label: 'All Convert (12)' },
@@ -870,10 +947,10 @@ export default function App() {
                         key={tab.id}
                         type="button"
                         onClick={() => setConvertDirectionFilter(tab.id)}
-                        className={`px-3 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition ${
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition ${
                           convertDirectionFilter === tab.id
-                            ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm'
-                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                            ? 'bg-white dark:bg-[#1F1F24] text-[#1D1D1F] dark:text-white shadow-xs'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-[#1D1D1F] dark:hover:text-white'
                         }`}
                       >
                         {tab.label}
@@ -883,22 +960,18 @@ export default function App() {
                 )}
               </div>
 
-              {/* Bento Tool Grid or Graceful Category Empty State */}
+              {/* Bento Tool Grid or Empty State */}
               {visibleTools.length === 0 ? (
-                <div className="rounded-2xl bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 p-10 text-center max-w-xl mx-auto space-y-4">
-                  <div className="w-12 h-12 rounded-2xl bg-indigo-500/12 text-indigo-500 flex items-center justify-center mx-auto">
+                <div className="rounded-2xl bg-white dark:bg-[#121215] border border-black/[0.06] dark:border-white/[0.07] p-10 text-center max-w-xl mx-auto space-y-4">
+                  <div className="w-12 h-12 rounded-2xl bg-black/[0.04] dark:bg-white/[0.06] text-[#0071E3] dark:text-[#0A84FF] flex items-center justify-center mx-auto">
                     {getCategoryIcon(activeCategory)}
                   </div>
                   <div>
-                    <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-                      {inlineSearch.trim()
-                        ? `No tools matching "${inlineSearch}"`
-                        : `${activeCategory} tools are queued next`}
+                    <h2 className="text-base font-semibold text-[#1D1D1F] dark:text-white">
+                      No tools matching &ldquo;{inlineSearch}&rdquo;
                     </h2>
                     <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                      {inlineSearch.trim()
-                        ? 'Try searching for Merge, OCR, Repair, Word, Excel, Watermark, Sign, Protect, Redact, Compare, or Workflows.'
-                        : 'All 33 Organize, Optimize, Convert, Edit, Security, and Workflow tools are available locally right now.'}
+                      Try searching for Split, Merge, OCR, Repair, Word, Excel, Watermark, Sign, Protect, Redact, Compare, or Workflows.
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">
@@ -908,21 +981,21 @@ export default function App() {
                         setInlineSearch('');
                         setActiveCategory('All');
                       }}
-                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-medium"
+                      className="px-4 py-2 rounded-xl bg-[#0071E3] dark:bg-[#0A84FF] text-white text-xs font-medium"
                     >
                       View all 33 tools
                     </button>
                     <button
                       type="button"
-                      onClick={() => openTool('merge-pdf')}
-                      className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-medium"
+                      onClick={() => openTool('split-pdf')}
+                      className="px-4 py-2 rounded-xl bg-black/[0.05] dark:bg-white/[0.07] text-slate-700 dark:text-slate-200 text-xs font-medium"
                     >
-                      Open Merge PDF
+                      Open Split PDF
                     </button>
                   </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
                   {visibleTools.map((tool) => {
                     const isPinned = pinnedIds.includes(tool.id);
                     return (
@@ -937,18 +1010,18 @@ export default function App() {
                             openTool(tool.id);
                           }
                         }}
-                        className="group relative rounded-2xl p-5 bg-white dark:bg-slate-900/80 border border-slate-200/90 dark:border-slate-800 hover:border-indigo-500/60 hover:-translate-y-0.5 transition-all duration-150 cursor-pointer flex flex-col justify-between focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                        className="group relative rounded-2xl p-5 bg-white dark:bg-[#121215] border border-black/[0.06] dark:border-white/[0.07] hover:border-black/[0.15] dark:hover:border-white/[0.16] hover:bg-white dark:hover:bg-[#16161A] hover:-translate-y-0.5 transition-all duration-150 cursor-pointer flex flex-col justify-between focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A84FF]"
                       >
                         <div>
                           <div className="flex items-start justify-between gap-3 mb-4">
                             <div
-                              className={`w-11 h-11 rounded-xl flex items-center justify-center transition-transform duration-150 group-hover:scale-105 ${tool.badgeClass}`}
+                              className={`w-10 h-10 rounded-[12px] flex items-center justify-center transition-transform duration-150 group-hover:scale-105 ${tool.badgeClass}`}
                             >
-                              <ToolIcon name={tool.iconName} className="w-5 h-5" />
+                              <ToolIcon name={tool.iconName} className="w-[19px] h-[19px]" />
                             </div>
 
-                            <div className="flex items-center gap-1.5">
-                              <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                            <div className="flex items-center gap-1">
+                              <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-black/[0.04] dark:bg-white/[0.05] text-slate-400 dark:text-slate-500">
                                 {tool.shortcut}
                               </kbd>
                               <button
@@ -958,16 +1031,16 @@ export default function App() {
                                 aria-label={isPinned ? `Unpin ${tool.title}` : `Pin ${tool.title}`}
                                 className={`p-1.5 rounded-lg transition ${
                                   isPinned
-                                    ? 'text-indigo-500 bg-indigo-500/10'
-                                    : 'text-slate-400 opacity-0 group-hover:opacity-100 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                    ? 'text-[#0071E3] dark:text-[#0A84FF] bg-[#0A84FF]/10'
+                                    : 'text-slate-400 opacity-0 group-hover:opacity-100 hover:bg-black/[0.05] dark:hover:bg-white/[0.07]'
                                 }`}
                               >
-                                <Pin className="w-3.5 h-3.5" />
+                                <Pin className="w-3.5 h-3.5" strokeWidth={1.6} />
                               </button>
                             </div>
                           </div>
 
-                          <h2 className="text-base font-semibold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-300 transition-colors">
+                          <h2 className="text-[15px] font-semibold tracking-tight text-[#1D1D1F] dark:text-[#F5F5F7] group-hover:text-[#0071E3] dark:group-hover:text-white transition-colors">
                             {tool.title}
                           </h2>
                           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed line-clamp-2">
@@ -975,7 +1048,7 @@ export default function App() {
                           </p>
                         </div>
 
-                        <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs text-slate-400 dark:text-slate-500">
+                        <div className="mt-4 pt-3 border-t border-black/[0.05] dark:border-white/[0.05] flex items-center justify-between text-[11px] text-slate-400 dark:text-slate-500">
                           <span className="truncate">
                             {tool.category}
                             {tool.conversionDirection === 'to-pdf'
@@ -984,7 +1057,7 @@ export default function App() {
                                 ? ' · From PDF'
                                 : ''}
                           </span>
-                          <span className="font-mono tabular-nums text-[11px] opacity-75">
+                          <span className="font-mono tabular-nums opacity-70">
                             {String(tool.number).padStart(2, '0')}
                           </span>
                         </div>
@@ -1000,51 +1073,50 @@ export default function App() {
         {/* Mobile Bottom Navigation Bar */}
         <nav
           aria-label="Mobile quick navigation"
-          className="lg:hidden fixed bottom-0 inset-x-0 z-20 h-14 px-2 bg-white/95 dark:bg-slate-950/95 border-t border-slate-200 dark:border-slate-800 backdrop-blur-md grid grid-cols-4 items-center"
+          className="lg:hidden fixed bottom-0 inset-x-0 z-20 h-14 px-2 bg-white/90 dark:bg-[#0C0C0F]/90 border-t border-black/[0.06] dark:border-white/[0.08] backdrop-blur-xl grid grid-cols-4 items-center"
         >
           <button
             type="button"
             onClick={() => {
+              setActiveView('tools');
               setActiveToolId(null);
               setActiveCategory('All');
             }}
             className={`flex flex-col items-center justify-center gap-0.5 text-[11px] font-medium ${
-              !activeToolId && activeCategory === 'All'
-                ? 'text-indigo-600 dark:text-indigo-400'
+              activeView === 'tools' && !activeToolId && activeCategory === 'All'
+                ? 'text-[#0071E3] dark:text-[#0A84FF]'
                 : 'text-slate-500 dark:text-slate-400'
             }`}
           >
-            <Grid className="w-4 h-4" />
-            <span>All</span>
+            <Grid className="w-4 h-4" strokeWidth={1.6} />
+            <span>Tools</span>
           </button>
           <button
             type="button"
-            onClick={() => {
-              setActiveToolId(null);
-              setActiveCategory('Organize');
-            }}
+            onClick={openDocumentViewer}
             className={`flex flex-col items-center justify-center gap-0.5 text-[11px] font-medium ${
-              !activeToolId && activeCategory === 'Organize'
-                ? 'text-indigo-600 dark:text-indigo-400'
+              activeView === 'viewer'
+                ? 'text-[#0071E3] dark:text-[#0A84FF]'
                 : 'text-slate-500 dark:text-slate-400'
             }`}
           >
-            <FolderKanban className="w-4 h-4" />
-            <span>Organize</span>
+            <BookOpen className="w-4 h-4" strokeWidth={1.6} />
+            <span>Viewer</span>
           </button>
           <button
             type="button"
             onClick={() => {
+              setActiveView('tools');
               setActiveToolId(null);
               setActiveCategory('Convert');
             }}
             className={`flex flex-col items-center justify-center gap-0.5 text-[11px] font-medium ${
-              !activeToolId && activeCategory === 'Convert'
-                ? 'text-indigo-600 dark:text-indigo-400'
+              activeView === 'tools' && !activeToolId && activeCategory === 'Convert'
+                ? 'text-[#0071E3] dark:text-[#0A84FF]'
                 : 'text-slate-500 dark:text-slate-400'
             }`}
           >
-            <ArrowRightLeft className="w-4 h-4" />
+            <ArrowRightLeft className="w-4 h-4" strokeWidth={1.6} />
             <span>Convert</span>
           </button>
           <button
@@ -1052,7 +1124,7 @@ export default function App() {
             onClick={() => setPaletteOpen(true)}
             className="flex flex-col items-center justify-center gap-0.5 text-[11px] font-medium text-slate-500 dark:text-slate-400"
           >
-            <Search className="w-4 h-4" />
+            <Search className="w-4 h-4" strokeWidth={1.6} />
             <span>Search</span>
           </button>
         </nav>
@@ -1063,7 +1135,9 @@ export default function App() {
         isOpen={paletteOpen}
         onClose={() => setPaletteOpen(false)}
         onSelectTool={openTool}
+        onOpenDocumentViewer={openDocumentViewer}
         onGoHome={() => {
+          setActiveView('tools');
           setActiveToolId(null);
           setActiveCategory('All');
         }}

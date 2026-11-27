@@ -6,6 +6,7 @@ import {
   Download,
   ArrowRight,
   Home,
+  BookOpen,
 } from 'lucide-react';
 import { PDF_TOOLS, ToolId } from '../data/tools';
 import { ToolIcon } from './ToolIcon';
@@ -15,6 +16,7 @@ interface CommandPaletteProps {
   onClose: () => void;
   onSelectTool: (id: ToolId) => void;
   onGoHome: () => void;
+  onOpenDocumentViewer: () => void;
   darkMode: boolean;
   onToggleDarkMode: () => void;
   onDownloadSamplePdf: () => void;
@@ -25,6 +27,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onClose,
   onSelectTool,
   onGoHome,
+  onOpenDocumentViewer,
   darkMode,
   onToggleDarkMode,
   onDownloadSamplePdf,
@@ -87,27 +90,27 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] px-4 bg-slate-950/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] px-4 bg-black/55 backdrop-blur-md"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label="Command palette"
     >
       <div
-        className="w-full max-w-xl rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden"
+        className="w-full max-w-xl rounded-2xl bg-white/95 dark:bg-[#141418]/95 backdrop-blur-2xl border border-black/[0.08] dark:border-white/[0.1] shadow-2xl shadow-black/50 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center px-4 py-3.5 border-b border-slate-200 dark:border-slate-800">
-          <Search className="w-4 h-4 text-indigo-500 mr-3 shrink-0" />
+        <div className="flex items-center px-4 py-3.5 border-b border-black/[0.06] dark:border-white/[0.08]">
+          <Search className="w-4 h-4 text-slate-400 mr-3 shrink-0" strokeWidth={1.6} />
           <input
             ref={inputRef}
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Jump to any of the 33 KAAGAZ PDF tools..."
-            className="w-full bg-transparent text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none"
+            className="w-full bg-transparent text-sm text-slate-900 dark:text-[#F5F5F7] placeholder-slate-400 focus:outline-none"
           />
-          <kbd className="px-2 py-0.5 text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 shrink-0">
+          <kbd className="px-2 py-0.5 text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-black/[0.04] dark:bg-white/[0.06] rounded border border-black/[0.06] dark:border-white/[0.08] shrink-0">
             ESC
           </kbd>
         </div>
@@ -138,14 +141,14 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                       onMouseEnter={() => setSelectedIndex(index)}
                       className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-colors ${
                         active
-                          ? 'bg-indigo-600 text-white'
-                          : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/70'
+                          ? 'bg-[#0071E3] dark:bg-[#0A84FF] text-white'
+                          : 'text-slate-700 dark:text-slate-200 hover:bg-black/[0.04] dark:hover:bg-white/[0.05]'
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         <div
                           className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                            active ? 'bg-white/15 text-white' : tool.badgeClass
+                            active ? 'bg-white/20 text-white' : tool.badgeClass
                           }`}
                         >
                           <ToolIcon name={tool.iconName} className="w-4 h-4" />
@@ -155,7 +158,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                             <span className="truncate">{tool.title}</span>
                             <span
                               className={`text-xs shrink-0 ${
-                                active ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'
+                                active ? 'text-white/80' : 'text-slate-400 dark:text-slate-500'
                               }`}
                             >
                               · {tool.category}
@@ -164,7 +167,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                           <div
                             className={`text-xs truncate ${
                               active
-                                ? 'text-indigo-100'
+                                ? 'text-white/80'
                                 : 'text-slate-500 dark:text-slate-400'
                             }`}
                           >
@@ -177,12 +180,12 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                           className={`px-1.5 py-0.5 text-[11px] font-mono rounded ${
                             active
                               ? 'bg-white/20 text-white'
-                              : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                              : 'bg-black/[0.04] dark:bg-white/[0.06] text-slate-500 dark:text-slate-400'
                           }`}
                         >
                           {tool.shortcut}
                         </kbd>
-                        <ArrowRight className="w-3.5 h-3.5 opacity-75" />
+                        <ArrowRight className="w-3.5 h-3.5 opacity-75" strokeWidth={1.6} />
                       </div>
                     </button>
                   );
@@ -191,20 +194,34 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             )}
           </div>
 
-          <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+          <div className="pt-2 border-t border-black/[0.06] dark:border-white/[0.07]">
             <div className="px-3 py-1 text-xs font-medium text-slate-500 dark:text-slate-400">
               Actions
             </div>
             <button
               type="button"
               onClick={() => {
+                onOpenDocumentViewer();
+                onClose();
+              }}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm text-slate-700 dark:text-slate-300 hover:bg-black/[0.04] dark:hover:bg-white/[0.05] transition-colors"
+            >
+              <span className="flex items-center gap-2.5">
+                <BookOpen className="w-4 h-4 text-[#0A84FF]" strokeWidth={1.6} />
+                Open Universal Document Viewer
+              </span>
+              <span className="text-xs text-slate-400 font-mono">Viewer</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
                 onGoHome();
                 onClose();
               }}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70 transition-colors"
+              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm text-slate-700 dark:text-slate-300 hover:bg-black/[0.04] dark:hover:bg-white/[0.05] transition-colors"
             >
               <span className="flex items-center gap-2.5">
-                <Home className="w-4 h-4 text-slate-400" />
+                <Home className="w-4 h-4 text-slate-400" strokeWidth={1.6} />
                 Return to All Tools Dashboard
               </span>
               <span className="text-xs text-slate-400 font-mono">Home</span>
@@ -215,13 +232,13 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 onToggleDarkMode();
                 onClose();
               }}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70 transition-colors"
+              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm text-slate-700 dark:text-slate-300 hover:bg-black/[0.04] dark:hover:bg-white/[0.05] transition-colors"
             >
               <span className="flex items-center gap-2.5">
                 {darkMode ? (
-                  <Sun className="w-4 h-4 text-amber-400" />
+                  <Sun className="w-4 h-4 text-amber-400" strokeWidth={1.6} />
                 ) : (
-                  <Moon className="w-4 h-4 text-indigo-500" />
+                  <Moon className="w-4 h-4 text-[#0071E3]" strokeWidth={1.6} />
                 )}
                 Switch to {darkMode ? 'Light Mode' : 'Dark Mode'}
               </span>
@@ -233,19 +250,19 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 onDownloadSamplePdf();
                 onClose();
               }}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70 transition-colors"
+              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm text-slate-700 dark:text-slate-300 hover:bg-black/[0.04] dark:hover:bg-white/[0.05] transition-colors"
             >
               <span className="flex items-center gap-2.5">
-                <Download className="w-4 h-4 text-violet-500" />
-                Download 6-Page Sample PDF
+                <Download className="w-4 h-4 text-[#0A84FF]" strokeWidth={1.6} />
+                Download Sample PDF
               </span>
               <span className="text-xs text-slate-400 font-mono">Sample</span>
             </button>
           </div>
         </div>
 
-        <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-950/60 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-          <span>Runs locally in browser memory</span>
+        <div className="px-4 py-2.5 bg-black/[0.02] dark:bg-white/[0.02] border-t border-black/[0.06] dark:border-white/[0.07] flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+          <span>Runs privately in browser memory</span>
           <span>Arrows to navigate · Enter to open</span>
         </div>
       </div>

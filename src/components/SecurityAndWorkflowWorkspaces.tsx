@@ -21,6 +21,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Eraser,
+  FilePlus2,
 } from 'lucide-react';
 import {
   PageThumbnail,
@@ -47,7 +48,12 @@ import {
   WorkflowStepKind,
   runCustomWorkflowPipeline,
 } from '../utils/advancedEngine';
-import { WorkspaceDropzone, FloatingActionBar } from './WorkspaceShared';
+import {
+  WorkspaceDropzone,
+  FloatingActionBar,
+  MultiOutputDownloadPanel,
+  GeneratedFileItem,
+} from './WorkspaceShared';
 
 /* ============================================================================
    27. UNLOCK PDF WORKSPACE
@@ -232,7 +238,7 @@ export const UnlockPdfWorkspace: React.FC = () => {
    28. PROTECT PDF WORKSPACE (Real Password Encryption)
 ============================================================================ */
 export const ProtectPdfWorkspace: React.FC = () => {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [options, setOptions] = useState<ProtectPdfOptions>({
     userPassword: '',
     ownerPassword: '',
@@ -243,68 +249,139 @@ export const ProtectPdfWorkspace: React.FC = () => {
   });
   const [confirmPassword, setConfirmPassword] = useState('');
   const [encrypting, setEncrypting] = useState(false);
-  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
-  const [encryptedBlob, setEncryptedBlob] = useState<Blob | null>(null);
+  const [progress, setProgress] = useState<{ label: string; current: number; total: number } | null>(
+    null
+  );
+  const [outputs, setOutputs] = useState<GeneratedFileItem[]>([]);
+  const addInputRef = useRef<HTMLInputElement>(null);
 
   const passwordsMatch =
     options.userPassword.length >= 3 && options.userPassword === confirmPassword;
 
+  const handleFiles = (incoming: File[]) => {
+    if (incoming.length === 0) return;
+    setFiles((prev) => [...prev, ...incoming]);
+    setOutputs([]);
+  };
+
   const handleProtect = async () => {
-    if (!file || !passwordsMatch) return;
+    if (files.length === 0 || !passwordsMatch) return;
     setEncrypting(true);
+    setOutputs([]);
     try {
-      const blob = await protectPdfFile(file, options, (current, total) =>
-        setProgress({ current, total })
-      );
-      setEncryptedBlob(blob);
+      const generated: GeneratedFileItem[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const blob = await protectPdfFile(f, options, (current, total) =>
+          setProgress({
+            label: files.length > 1 ? `[${i + 1}/${files.length}] ${f.name}` : f.name,
+            current,
+            total,
+          })
+        );
+        const base = f.name.replace(/\.pdf$/i, '');
+        generated.push({
+          id: `prot-${i}-${Date.now()}`,
+          filename: `${base}-protected.pdf`,
+          subtitle: 'Password encrypted',
+          sizeBytes: blob.size,
+          data: blob,
+        });
+      }
+      setOutputs(generated);
+      if (generated.length === 1) {
+        triggerDownload(generated[0].data, generated[0].filename);
+      }
     } finally {
       setEncrypting(false);
       setProgress(null);
     }
   };
 
-  const handleDownload = () => {
-    if (!file || !encryptedBlob) return;
-    const base = file.name.replace(/\.pdf$/i, '');
-    triggerDownload(encryptedBlob, `${base}-protected.pdf`);
-  };
-
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-28">
+      <input
+        ref={addInputRef}
+        type="file"
+        multiple
+        accept="application/pdf,.pdf"
+        className="hidden"
+        onChange={(e) => {
+          handleFiles(Array.from(e.target.files || []));
+          e.target.value = '';
+        }}
+      />
+
       <div className="lg:col-span-8">
-        {!file ? (
+        {files.length === 0 ? (
           <WorkspaceDropzone
-            title="Drop a PDF to encrypt with a password"
-            subtitle="Sets an open password plus granular print, copy, and modification permissions locally."
-            onFilesSelected={(files) => {
-              if (files[0]) {
-                setFile(files[0]);
-                setEncryptedBlob(null);
-              }
-            }}
+            multiple
+            title="Drop one or more PDFs to encrypt with a password"
+            subtitle="Sets an open password plus granular print, copy, and modification permissions across single or multiple PDFs."
+            selectLabel="Select PDF Files"
+            onFilesSelected={handleFiles}
           />
         ) : (
           <div className="rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 p-6 space-y-5">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-200 dark:border-slate-800">
               <div>
                 <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-                  {file.name}
+                  {files.length === 1 ? files[0].name : `${files.length} PDF files queued`}
                 </h3>
                 <p className="text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400">
-                  {formatBytes(file.size)}
+                  Total size: {formatBytes(files.reduce((acc, f) => acc + f.size, 0))}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setFile(null);
-                  setEncryptedBlob(null);
-                }}
-                className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs text-rose-500"
-              >
-                Change file
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => addInputRef.current?.click()}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 text-xs font-medium flex items-center gap-1.5 whitespace-nowrap"
+                >
+                  <FilePlus2 className="w-3.5 h-3.5" /> Add PDFs
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFiles([]);
+                    setOutputs([]);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs text-rose-500 whitespace-nowrap"
+                >
+                  Clear all
+                </button>
+              </div>
             </div>
+
+            {files.length > 1 && (
+              <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                {files.map((f, idx) => (
+                  <div
+                    key={`${f.name}-${idx}`}
+                    className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate">
+                        {f.name}
+                      </div>
+                      <div className="text-[11px] font-mono tabular-nums text-slate-500">
+                        {formatBytes(f.size)}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFiles((prev) => prev.filter((_, i) => i !== idx));
+                        setOutputs([]);
+                      }}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -316,7 +393,7 @@ export const ProtectPdfWorkspace: React.FC = () => {
                   value={options.userPassword}
                   onChange={(e) => {
                     setOptions({ ...options, userPassword: e.target.value });
-                    setEncryptedBlob(null);
+                    setOutputs([]);
                   }}
                   placeholder="Enter password"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-sm focus:outline-none focus:border-indigo-500"
@@ -331,7 +408,7 @@ export const ProtectPdfWorkspace: React.FC = () => {
                   value={confirmPassword}
                   onChange={(e) => {
                     setConfirmPassword(e.target.value);
-                    setEncryptedBlob(null);
+                    setOutputs([]);
                   }}
                   placeholder="Re-enter password"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-sm focus:outline-none focus:border-indigo-500"
@@ -345,31 +422,21 @@ export const ProtectPdfWorkspace: React.FC = () => {
 
             {progress && (
               <p className="text-xs font-mono text-indigo-500 tabular-nums">
-                Encrypting page {progress.current} of {progress.total}...
+                Encrypting {progress.label} — page {progress.current} of {progress.total}...
               </p>
             )}
 
-            {encryptedBlob && (
-              <div className="rounded-xl bg-emerald-500/8 border border-emerald-500/25 p-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-start gap-3">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                      Password encryption complete
-                    </p>
-                    <p className="text-xs font-mono tabular-nums text-slate-600 dark:text-slate-300 mt-0.5">
-                      Protected size: {formatBytes(encryptedBlob.size)}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleDownload}
-                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5"
-                >
-                  <Download className="w-4 h-4" /> Download Protected PDF
-                </button>
-              </div>
+            {outputs.length > 0 && (
+              <MultiOutputDownloadPanel
+                title={
+                  outputs.length === 1
+                    ? 'Protected PDF ready'
+                    : `${outputs.length} Protected PDFs ready`
+                }
+                zipFilename="protected-pdfs.zip"
+                items={outputs}
+                onClear={() => setOutputs([])}
+              />
             )}
           </div>
         )}
@@ -409,21 +476,18 @@ export const ProtectPdfWorkspace: React.FC = () => {
 
           <button
             type="button"
-            onClick={encryptedBlob ? handleDownload : handleProtect}
-            disabled={!file || !passwordsMatch || encrypting}
-            className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 text-white font-medium text-sm shadow-sm flex items-center justify-center gap-2 transition"
+            onClick={handleProtect}
+            disabled={files.length === 0 || !passwordsMatch || encrypting}
+            className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 text-white font-medium text-sm shadow-sm flex items-center justify-center gap-2 transition whitespace-nowrap"
           >
             {encrypting ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" /> Encrypting...
               </>
-            ) : encryptedBlob ? (
-              <>
-                <Download className="w-4 h-4" /> Download Protected PDF
-              </>
             ) : (
               <>
-                <Lock className="w-4 h-4" /> Encrypt & Protect PDF
+                <Lock className="w-4 h-4" />{' '}
+                {files.length > 1 ? `Encrypt All (${files.length})` : 'Encrypt & Protect PDF'}
               </>
             )}
           </button>
@@ -431,14 +495,20 @@ export const ProtectPdfWorkspace: React.FC = () => {
       </div>
 
       <FloatingActionBar
-        visible={Boolean(file)}
-        summary={encryptedBlob ? 'Encrypted & ready' : passwordsMatch ? 'Password valid' : 'Set password'}
-        detail={file?.name}
-        actionLabel={encrypting ? 'Encrypting...' : encryptedBlob ? 'Download PDF' : 'Protect PDF'}
+        visible={files.length > 0}
+        summary={
+          outputs.length > 0
+            ? `${outputs.length} encrypted`
+            : passwordsMatch
+              ? `${files.length} file${files.length === 1 ? '' : 's'} ready`
+              : 'Set password'
+        }
+        detail={files.length === 1 ? files[0].name : 'Batch encryption'}
+        actionLabel={encrypting ? 'Encrypting...' : files.length > 1 ? 'Protect All' : 'Protect PDF'}
         disabled={!passwordsMatch}
         busy={encrypting}
-        onAction={encryptedBlob ? handleDownload : handleProtect}
-        onReset={() => setEncryptedBlob(null)}
+        onAction={handleProtect}
+        onReset={() => setOutputs([])}
       />
     </div>
   );
@@ -1324,70 +1394,148 @@ export const ComparePdfWorkspace: React.FC = () => {
    32. FLATTEN PDF WORKSPACE
 ============================================================================ */
 export const FlattenPdfWorkspace: React.FC = () => {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [stats, setStats] = useState<FlattenInspection | null>(null);
   const [mode, setMode] = useState<'full-static' | 'forms-only'>('full-static');
   const [dpi, setDpi] = useState<150 | 200 | 300>(200);
   const [flattening, setFlattening] = useState(false);
-  const [resultBytes, setResultBytes] = useState<Uint8Array | null>(null);
+  const [outputs, setOutputs] = useState<GeneratedFileItem[]>([]);
+  const addInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFiles = async (files: File[]) => {
-    const selected = files[0];
-    if (!selected) return;
-    setFile(selected);
-    setResultBytes(null);
-    setStats(await inspectPdfFlattenStats(selected));
+  const inspectBatch = async (list: File[]) => {
+    let totalPages = 0;
+    let totalForms = 0;
+    for (const f of list) {
+      const s = await inspectPdfFlattenStats(f);
+      totalPages += s.pageCount;
+      totalForms += s.formFieldCount;
+    }
+    setStats({ pageCount: totalPages, formFieldCount: totalForms });
+  };
+
+  const handleFiles = async (incoming: File[]) => {
+    if (incoming.length === 0) return;
+    const next = [...files, ...incoming];
+    setFiles(next);
+    setOutputs([]);
+    await inspectBatch(next);
   };
 
   const handleFlatten = async () => {
-    if (!file) return;
+    if (files.length === 0) return;
     setFlattening(true);
+    setOutputs([]);
     try {
-      const bytes = await flattenPdfFile(file, mode, dpi);
-      setResultBytes(bytes);
+      const generated: GeneratedFileItem[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const bytes = await flattenPdfFile(f, mode, dpi);
+        const base = f.name.replace(/\.pdf$/i, '');
+        generated.push({
+          id: `flat-${i}-${Date.now()}`,
+          filename: `${base}-flattened.pdf`,
+          subtitle: mode === 'full-static' ? `Static ${dpi} DPI` : 'Forms flattened',
+          sizeBytes: bytes.byteLength,
+          data: bytes,
+        });
+      }
+      setOutputs(generated);
+      if (generated.length === 1) {
+        triggerDownload(generated[0].data, generated[0].filename);
+      }
     } finally {
       setFlattening(false);
     }
   };
 
-  const handleDownload = () => {
-    if (!file || !resultBytes) return;
-    const base = file.name.replace(/\.pdf$/i, '');
-    triggerDownload(resultBytes, `${base}-flattened.pdf`);
-  };
-
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-28">
+      <input
+        ref={addInputRef}
+        type="file"
+        multiple
+        accept="application/pdf,.pdf"
+        className="hidden"
+        onChange={(e) => {
+          handleFiles(Array.from(e.target.files || []));
+          e.target.value = '';
+        }}
+      />
+
       <div className="lg:col-span-8">
-        {!file ? (
+        {files.length === 0 ? (
           <WorkspaceDropzone
-            title="Drop a PDF to flatten forms, annotations & layers"
-            subtitle="Convert interactive forms and layered annotations into static, uneditable pages."
+            multiple
+            title="Drop one or more PDFs to flatten forms, annotations & layers"
+            subtitle="Convert interactive forms and layered annotations into static, uneditable pages across single or multiple files."
+            selectLabel="Select PDF Files"
             onFilesSelected={handleFiles}
           />
         ) : (
           <div className="rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 p-6 space-y-5">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-200 dark:border-slate-800">
               <div>
                 <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-                  {file.name}
+                  {files.length === 1 ? files[0].name : `${files.length} PDF files queued`}
                 </h3>
                 <p className="text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400">
-                  {stats?.pageCount ?? 0} pages · {stats?.formFieldCount ?? 0} interactive form field(s) detected
+                  {stats?.pageCount ?? 0} total pages · {stats?.formFieldCount ?? 0} interactive form field(s) detected
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setFile(null);
-                  setStats(null);
-                  setResultBytes(null);
-                }}
-                className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs text-rose-500"
-              >
-                Change file
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => addInputRef.current?.click()}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 text-xs font-medium flex items-center gap-1.5 whitespace-nowrap"
+                >
+                  <FilePlus2 className="w-3.5 h-3.5" /> Add PDFs
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFiles([]);
+                    setStats(null);
+                    setOutputs([]);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs text-rose-500 whitespace-nowrap"
+                >
+                  Clear all
+                </button>
+              </div>
             </div>
+
+            {files.length > 1 && (
+              <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                {files.map((f, idx) => (
+                  <div
+                    key={`${f.name}-${idx}`}
+                    className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate">
+                        {f.name}
+                      </div>
+                      <div className="text-[11px] font-mono tabular-nums text-slate-500">
+                        {formatBytes(f.size)}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const next = files.filter((_, i) => i !== idx);
+                        setFiles(next);
+                        setOutputs([]);
+                        if (next.length > 0) await inspectBatch(next);
+                        else setStats(null);
+                      }}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               {(
@@ -1409,7 +1557,7 @@ export const FlattenPdfWorkspace: React.FC = () => {
                   type="button"
                   onClick={() => {
                     setMode(opt.id);
-                    setResultBytes(null);
+                    setOutputs([]);
                   }}
                   className={`p-4 rounded-xl border text-left transition ${
                     mode === opt.id
@@ -1427,27 +1575,17 @@ export const FlattenPdfWorkspace: React.FC = () => {
               ))}
             </div>
 
-            {resultBytes && (
-              <div className="rounded-xl bg-emerald-500/8 border border-emerald-500/25 p-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-start gap-3">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                      Flattened PDF ready
-                    </p>
-                    <p className="text-xs font-mono tabular-nums text-slate-600 dark:text-slate-300 mt-0.5">
-                      Output size: {formatBytes(resultBytes.byteLength)}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleDownload}
-                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5"
-                >
-                  <Download className="w-4 h-4" /> Download Flattened PDF
-                </button>
-              </div>
+            {outputs.length > 0 && (
+              <MultiOutputDownloadPanel
+                title={
+                  outputs.length === 1
+                    ? 'Flattened PDF ready'
+                    : `${outputs.length} Flattened PDFs ready`
+                }
+                zipFilename="flattened-pdfs.zip"
+                items={outputs}
+                onClear={() => setOutputs([])}
+              />
             )}
           </div>
         )}
@@ -1488,21 +1626,18 @@ export const FlattenPdfWorkspace: React.FC = () => {
 
           <button
             type="button"
-            onClick={resultBytes ? handleDownload : handleFlatten}
-            disabled={!file || flattening}
-            className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 text-white font-medium text-sm shadow-sm flex items-center justify-center gap-2 transition"
+            onClick={handleFlatten}
+            disabled={files.length === 0 || flattening}
+            className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 text-white font-medium text-sm shadow-sm flex items-center justify-center gap-2 transition whitespace-nowrap"
           >
             {flattening ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" /> Flattening...
               </>
-            ) : resultBytes ? (
-              <>
-                <Download className="w-4 h-4" /> Download Flattened PDF
-              </>
             ) : (
               <>
-                <Layers2 className="w-4 h-4" /> Flatten PDF Now
+                <Layers2 className="w-4 h-4" />{' '}
+                {files.length > 1 ? `Flatten All (${files.length})` : 'Flatten PDF Now'}
               </>
             )}
           </button>
@@ -1510,13 +1645,19 @@ export const FlattenPdfWorkspace: React.FC = () => {
       </div>
 
       <FloatingActionBar
-        visible={Boolean(file)}
-        summary={resultBytes ? 'Flattened' : mode === 'full-static' ? `Static ${dpi} DPI` : 'Forms only'}
-        detail={file?.name}
-        actionLabel={flattening ? 'Flattening...' : resultBytes ? 'Download PDF' : 'Flatten Now'}
+        visible={files.length > 0}
+        summary={
+          outputs.length > 0
+            ? `${outputs.length} flattened`
+            : mode === 'full-static'
+              ? `Static ${dpi} DPI`
+              : 'Forms only'
+        }
+        detail={files.length === 1 ? files[0].name : `${files.length} PDFs queued`}
+        actionLabel={flattening ? 'Flattening...' : files.length > 1 ? 'Flatten All' : 'Flatten Now'}
         busy={flattening}
-        onAction={resultBytes ? handleDownload : handleFlatten}
-        onReset={() => setResultBytes(null)}
+        onAction={handleFlatten}
+        onReset={() => setOutputs([])}
       />
     </div>
   );
@@ -1568,11 +1709,18 @@ const WORKFLOW_PRESETS: { name: string; steps: WorkflowStep[] }[] = [
 ];
 
 export const CustomWorkflowsWorkspace: React.FC = () => {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [steps, setSteps] = useState<WorkflowStep[]>(WORKFLOW_PRESETS[0].steps);
   const [running, setRunning] = useState(false);
   const [progressMsg, setProgressMsg] = useState('');
-  const [outputBytes, setOutputBytes] = useState<Uint8Array | null>(null);
+  const [outputs, setOutputs] = useState<GeneratedFileItem[]>([]);
+  const addInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFiles = (incoming: File[]) => {
+    if (incoming.length === 0) return;
+    setFiles((prev) => [...prev, ...incoming]);
+    setOutputs([]);
+  };
 
   const addStep = (kind: WorkflowStepKind) => {
     setSteps((prev) => [
@@ -1593,7 +1741,7 @@ export const CustomWorkflowsWorkspace: React.FC = () => {
         },
       },
     ]);
-    setOutputBytes(null);
+    setOutputs([]);
   };
 
   const moveStep = (idx: number, dir: -1 | 1) => {
@@ -1606,62 +1754,118 @@ export const CustomWorkflowsWorkspace: React.FC = () => {
   };
 
   const handleRunPipeline = async () => {
-    if (!file || steps.filter((s) => s.enabled).length === 0) return;
+    if (files.length === 0 || steps.filter((s) => s.enabled).length === 0) return;
     setRunning(true);
-    setOutputBytes(null);
+    setOutputs([]);
     try {
-      const bytes = await runCustomWorkflowPipeline(file, steps, (i, total, kind) =>
-        setProgressMsg(`Running step ${i}/${total}: ${STEP_LABELS[kind as WorkflowStepKind] || kind}...`)
-      );
-      setOutputBytes(bytes);
+      const generated: GeneratedFileItem[] = [];
+      for (let fIdx = 0; fIdx < files.length; fIdx++) {
+        const f = files[fIdx];
+        const bytes = await runCustomWorkflowPipeline(f, steps, (i, total, kind) =>
+          setProgressMsg(
+            `${files.length > 1 ? `[File ${fIdx + 1}/${files.length}] ` : ''}Running step ${i}/${total}: ${
+              STEP_LABELS[kind as WorkflowStepKind] || kind
+            }...`
+          )
+        );
+        const base = f.name.replace(/\.pdf$/i, '');
+        generated.push({
+          id: `wf-${fIdx}-${Date.now()}`,
+          filename: `${base}-workflow.pdf`,
+          subtitle: `${activeCount} pipeline step${activeCount === 1 ? '' : 's'} applied`,
+          sizeBytes: bytes.byteLength,
+          data: bytes,
+        });
+      }
+      setOutputs(generated);
+      if (generated.length === 1) {
+        triggerDownload(generated[0].data, generated[0].filename);
+      }
     } finally {
       setRunning(false);
       setProgressMsg('');
     }
   };
 
-  const handleDownload = () => {
-    if (!file || !outputBytes) return;
-    const base = file.name.replace(/\.pdf$/i, '');
-    triggerDownload(outputBytes, `${base}-workflow.pdf`);
-  };
-
   const activeCount = steps.filter((s) => s.enabled).length;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-28">
+      <input
+        ref={addInputRef}
+        type="file"
+        multiple
+        accept="application/pdf,.pdf"
+        className="hidden"
+        onChange={(e) => {
+          handleFiles(Array.from(e.target.files || []));
+          e.target.value = '';
+        }}
+      />
+
       <div className="lg:col-span-8 space-y-5">
-        {!file ? (
+        {files.length === 0 ? (
           <WorkspaceDropzone
-            title="Drop a PDF to run your automated workflow"
-            subtitle="Chain Watermark, Page Numbers, Rotate, Compress, Flatten, and PDF/A into a 1-click pipeline."
-            onFilesSelected={(files) => {
-              if (files[0]) {
-                setFile(files[0]);
-                setOutputBytes(null);
-              }
-            }}
+            multiple
+            title="Drop one or more PDFs to run your automated workflow"
+            subtitle="Chain Watermark, Page Numbers, Rotate, Compress, Flatten, and PDF/A into a 1-click batch pipeline."
+            selectLabel="Select PDF Files"
+            onFilesSelected={handleFiles}
           />
         ) : (
-          <div className="rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 p-5 flex items-center justify-between">
-            <div>
-              <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                {file.name}
+          <div className="rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 p-5 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                  {files.length === 1 ? files[0].name : `${files.length} PDF files queued`}
+                </div>
+                <div className="text-xs font-mono tabular-nums text-slate-500">
+                  {formatBytes(files.reduce((acc, f) => acc + f.size, 0))} · {activeCount} active pipeline step(s)
+                </div>
               </div>
-              <div className="text-xs font-mono tabular-nums text-slate-500">
-                {formatBytes(file.size)} · {activeCount} active pipeline step(s)
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => addInputRef.current?.click()}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 text-xs font-medium flex items-center gap-1.5 whitespace-nowrap"
+                >
+                  <FilePlus2 className="w-3.5 h-3.5" /> Add PDFs
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFiles([]);
+                    setOutputs([]);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs text-rose-500 whitespace-nowrap"
+                >
+                  Clear all
+                </button>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setFile(null);
-                setOutputBytes(null);
-              }}
-              className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs text-rose-500"
-            >
-              Change file
-            </button>
+
+            {files.length > 1 && (
+              <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-200 dark:border-slate-800">
+                {files.map((f, idx) => (
+                  <span
+                    key={`${f.name}-${idx}`}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300"
+                  >
+                    <span className="max-w-[150px] truncate">{f.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFiles((prev) => prev.filter((_, i) => i !== idx));
+                        setOutputs([]);
+                      }}
+                      className="text-slate-400 hover:text-rose-500"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -1673,7 +1877,7 @@ export const CustomWorkflowsWorkspace: React.FC = () => {
                 Pipeline sequence ({steps.length} steps)
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Steps execute top-to-bottom in browser memory.
+                Steps execute top-to-bottom across every queued PDF.
               </p>
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -1683,7 +1887,7 @@ export const CustomWorkflowsWorkspace: React.FC = () => {
                   type="button"
                   onClick={() => {
                     setSteps(preset.steps);
-                    setOutputBytes(null);
+                    setOutputs([]);
                   }}
                   className="px-2.5 py-1 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 text-xs font-medium"
                 >
@@ -1830,27 +2034,17 @@ export const CustomWorkflowsWorkspace: React.FC = () => {
             </div>
           )}
 
-          {outputBytes && (
-            <div className="rounded-xl bg-emerald-500/8 border border-emerald-500/25 p-4 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-start gap-3">
-                <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                    Workflow completed ({activeCount} steps)
-                  </p>
-                  <p className="text-xs font-mono tabular-nums text-slate-600 dark:text-slate-300 mt-0.5">
-                    Final output: {formatBytes(outputBytes.byteLength)}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleDownload}
-                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5"
-              >
-                <Download className="w-4 h-4" /> Download Result PDF
-              </button>
-            </div>
+          {outputs.length > 0 && (
+            <MultiOutputDownloadPanel
+              title={
+                outputs.length === 1
+                  ? `Workflow completed (${activeCount} steps)`
+                  : `${outputs.length} Workflow outputs ready (${activeCount} steps each)`
+              }
+              zipFilename="workflow-outputs.zip"
+              items={outputs}
+              onClear={() => setOutputs([])}
+            />
           )}
         </div>
       </div>
@@ -1880,21 +2074,20 @@ export const CustomWorkflowsWorkspace: React.FC = () => {
 
           <button
             type="button"
-            onClick={outputBytes ? handleDownload : handleRunPipeline}
-            disabled={!file || activeCount === 0 || running}
-            className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 text-white font-medium text-sm shadow-sm flex items-center justify-center gap-2 transition"
+            onClick={handleRunPipeline}
+            disabled={files.length === 0 || activeCount === 0 || running}
+            className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 text-white font-medium text-sm shadow-sm flex items-center justify-center gap-2 transition whitespace-nowrap"
           >
             {running ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" /> Running Pipeline...
               </>
-            ) : outputBytes ? (
-              <>
-                <Download className="w-4 h-4" /> Download Workflow Output
-              </>
             ) : (
               <>
-                <Play className="w-4 h-4" /> Run {activeCount}-Step Workflow
+                <Play className="w-4 h-4" />{' '}
+                {files.length > 1
+                  ? `Run on ${files.length} PDFs`
+                  : `Run ${activeCount}-Step Workflow`}
               </>
             )}
           </button>
@@ -1902,20 +2095,20 @@ export const CustomWorkflowsWorkspace: React.FC = () => {
       </div>
 
       <FloatingActionBar
-        visible={Boolean(file)}
-        summary={`${activeCount} active steps`}
-        detail={file?.name}
+        visible={files.length > 0}
+        summary={`${activeCount} active steps · ${files.length} file${files.length === 1 ? '' : 's'}`}
+        detail={files.length === 1 ? files[0].name : 'Batch workflow'}
         actionLabel={
           running
             ? 'Running...'
-            : outputBytes
-              ? 'Download Output'
+            : files.length > 1
+              ? `Run on ${files.length} PDFs`
               : 'Run Workflow'
         }
         disabled={activeCount === 0}
         busy={running}
-        onAction={outputBytes ? handleDownload : handleRunPipeline}
-        onReset={() => setOutputBytes(null)}
+        onAction={handleRunPipeline}
+        onReset={() => setOutputs([])}
       />
     </div>
   );

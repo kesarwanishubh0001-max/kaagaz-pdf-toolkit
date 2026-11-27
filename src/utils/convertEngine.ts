@@ -60,15 +60,15 @@ export async function createSyntheticSampleImages(): Promise<ImageToPdfItem[]> {
   const specs = [
     {
       title: '01. Product Architecture Overview',
-      sub: 'Client-Side Offline Execution Pipeline',
-      bg1: '#4F46E5',
-      bg2: '#7C3AED',
+      sub: 'Client-Side Execution Pipeline',
+      bg1: '#0071E3',
+      bg2: '#0A84FF',
       w: 1200,
       h: 900,
     },
     {
       title: '02. Quarterly Growth Summary',
-      sub: 'Enterprise Self-Hosted & Offline Deployment',
+      sub: 'Enterprise Self-Hosted & Private Deployment',
       bg1: '#059669',
       bg2: '#0284C7',
       w: 900,
@@ -532,7 +532,7 @@ export async function createSamplePptxFile(): Promise<File> {
       title: 'KAAGAZ Enterprise Deck — Q4 Strategy',
       bullets: [
         '100% Client-Side PDF and Office Productivity Suite',
-        'Zero Cloud Upload Latency with Full Offline Capability',
+        'Zero Cloud Upload Latency with Full Client-Side Privacy',
         'Built on pdf-lib, PDF.js, SheetJS, Mammoth, and PptxGenJS',
       ],
     },

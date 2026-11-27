@@ -39,78 +39,82 @@ import { ToolIconName } from '../data/tools';
 interface ToolIconProps {
   name: ToolIconName;
   className?: string;
+  strokeWidth?: number;
 }
 
 export const ToolIcon: React.FC<ToolIconProps> = ({
   name,
   className = 'w-5 h-5',
+  strokeWidth = 1.6,
 }) => {
+  const props = { className, strokeWidth };
+
   switch (name) {
     case 'Layers':
-      return <Layers className={className} />;
+      return <Layers {...props} />;
     case 'Scissors':
-      return <Scissors className={className} />;
+      return <Scissors {...props} />;
     case 'Trash2':
-      return <Trash2 className={className} />;
+      return <Trash2 {...props} />;
     case 'FileOutput':
-      return <FileOutput className={className} />;
+      return <FileOutput {...props} />;
     case 'LayoutGrid':
-      return <LayoutGrid className={className} />;
+      return <LayoutGrid {...props} />;
     case 'Camera':
-      return <Camera className={className} />;
+      return <Camera {...props} />;
     case 'Minimize2':
-      return <Minimize2 className={className} />;
+      return <Minimize2 {...props} />;
     case 'Wrench':
-      return <Wrench className={className} />;
+      return <Wrench {...props} />;
     case 'ScanText':
-      return <ScanText className={className} />;
+      return <ScanText {...props} />;
     case 'Image':
-      return <Image className={className} />;
+      return <Image {...props} />;
     case 'FileText':
-      return <FileText className={className} />;
+      return <FileText {...props} />;
     case 'Presentation':
-      return <Presentation className={className} />;
+      return <Presentation {...props} />;
     case 'Table':
-      return <Table className={className} />;
+      return <Table {...props} />;
     case 'Code2':
-      return <Code2 className={className} />;
+      return <Code2 {...props} />;
     case 'FileCode':
-      return <FileCode className={className} />;
+      return <FileCode {...props} />;
     case 'FileImage':
-      return <FileImage className={className} />;
+      return <FileImage {...props} />;
     case 'Images':
-      return <Images className={className} />;
+      return <Images {...props} />;
     case 'FileType':
-      return <FileType className={className} />;
+      return <FileType {...props} />;
     case 'MonitorPlay':
-      return <MonitorPlay className={className} />;
+      return <MonitorPlay {...props} />;
     case 'Sheet':
-      return <Sheet className={className} />;
+      return <Sheet {...props} />;
     case 'ShieldCheck':
-      return <ShieldCheck className={className} />;
+      return <ShieldCheck {...props} />;
     case 'RotateCw':
-      return <RotateCw className={className} />;
+      return <RotateCw {...props} />;
     case 'Hash':
-      return <Hash className={className} />;
+      return <Hash {...props} />;
     case 'Stamp':
-      return <Stamp className={className} />;
+      return <Stamp {...props} />;
     case 'Crop':
-      return <Crop className={className} />;
+      return <Crop {...props} />;
     case 'PenLine':
-      return <PenLine className={className} />;
+      return <PenLine {...props} />;
     case 'Unlock':
-      return <Unlock className={className} />;
+      return <Unlock {...props} />;
     case 'Lock':
-      return <Lock className={className} />;
+      return <Lock {...props} />;
     case 'PenTool':
-      return <PenTool className={className} />;
+      return <PenTool {...props} />;
     case 'EyeOff':
-      return <EyeOff className={className} />;
+      return <EyeOff {...props} />;
     case 'GitCompare':
-      return <GitCompare className={className} />;
+      return <GitCompare {...props} />;
     case 'Layers2':
-      return <Layers2 className={className} />;
+      return <Layers2 {...props} />;
     case 'Workflow':
-      return <Workflow className={className} />;
+      return <Workflow {...props} />;
   }
 };

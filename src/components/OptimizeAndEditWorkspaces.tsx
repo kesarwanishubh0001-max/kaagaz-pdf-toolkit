@@ -21,6 +21,7 @@ import {
   Trash2,
   ChevronLeft,
   ChevronRight,
+  FilePlus2,
 } from 'lucide-react';
 import {
   PageThumbnail,
@@ -48,37 +49,70 @@ import {
   applyPdfEdits,
   PdfEditOverlay,
 } from '../utils/advancedEngine';
-import { WorkspaceDropzone, FloatingActionBar } from './WorkspaceShared';
+import {
+  WorkspaceDropzone,
+  FloatingActionBar,
+  MultiOutputDownloadPanel,
+  GeneratedFileItem,
+} from './WorkspaceShared';
 
 /* ============================================================================
    8. REPAIR PDF WORKSPACE
 ============================================================================ */
 export const RepairPdfWorkspace: React.FC = () => {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [mode, setMode] = useState<'auto' | 'deep-visual'>('auto');
   const [statusMsg, setStatusMsg] = useState('');
   const [repairing, setRepairing] = useState(false);
-  const [result, setResult] = useState<RepairPdfResult | null>(null);
+  const [results, setResults] = useState<{ file: File; report: RepairPdfResult }[]>([]);
+  const [outputs, setOutputs] = useState<GeneratedFileItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const addInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFiles = (files: File[]) => {
-    const selected = files[0];
-    if (!selected) return;
-    setFile(selected);
-    setResult(null);
+  const handleFiles = (incoming: File[]) => {
+    if (incoming.length === 0) return;
+    setFiles((prev) => [...prev, ...incoming]);
+    setResults([]);
+    setOutputs([]);
     setError(null);
   };
 
   const handleRepair = async () => {
-    if (!file) return;
+    if (files.length === 0) return;
     setRepairing(true);
     setError(null);
+    setResults([]);
+    setOutputs([]);
+    const collectedReports: { file: File; report: RepairPdfResult }[] = [];
+    const collectedOutputs: GeneratedFileItem[] = [];
     try {
-      const out = await repairPdfLocally(file, mode, setStatusMsg);
-      setResult(out);
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        setStatusMsg(
+          files.length > 1
+            ? `Repairing ${i + 1}/${files.length}: ${f.name}...`
+            : `Repairing ${f.name}...`
+        );
+        const out = await repairPdfLocally(f, mode, (msg) =>
+          setStatusMsg(files.length > 1 ? `[${i + 1}/${files.length}] ${msg}` : msg)
+        );
+        collectedReports.push({ file: f, report: out });
+        const base = f.name.replace(/\.pdf$/i, '');
+        collectedOutputs.push({
+          id: `rep-${i}-${Date.now()}`,
+          filename: `${base}-repaired.pdf`,
+          subtitle: `${out.recoveredPages} page${out.recoveredPages === 1 ? '' : 's'} · ${
+            out.strategy === 'structural' ? 'Structural Rebuild' : 'Deep Visual Recovery'
+          }`,
+          sizeBytes: out.bytes.byteLength,
+          data: out.bytes,
+        });
+      }
+      setResults(collectedReports);
+      setOutputs(collectedOutputs);
     } catch {
       setError(
-        'This file is too severely corrupted to parse in browser memory. Try Deep Visual Recovery mode if available.'
+        'One or more files are too severely corrupted to parse in browser memory. Try Deep Visual Recovery mode.'
       );
     } finally {
       setRepairing(false);
@@ -86,45 +120,97 @@ export const RepairPdfWorkspace: React.FC = () => {
     }
   };
 
-  const handleDownload = () => {
-    if (!file || !result) return;
-    const base = file.name.replace(/\.pdf$/i, '');
-    triggerDownload(result.bytes, `${base}-repaired.pdf`);
-  };
+  const totalRecoveredPages = results.reduce((acc, r) => acc + r.report.recoveredPages, 0);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-28">
+      <input
+        ref={addInputRef}
+        type="file"
+        multiple
+        accept="application/pdf,.pdf"
+        className="hidden"
+        onChange={(e) => {
+          handleFiles(Array.from(e.target.files || []));
+          e.target.value = '';
+        }}
+      />
+
       <div className="lg:col-span-8">
-        {!file ? (
+        {files.length === 0 ? (
           <WorkspaceDropzone
-            title="Drop a damaged or corrupted PDF to repair"
-            subtitle="Reconstructs broken cross-reference tables or performs deep visual page recovery locally."
+            multiple
+            title="Drop one or more damaged PDFs to repair"
+            subtitle="Reconstructs broken cross-reference tables or performs deep visual page recovery across single or multiple files."
+            selectLabel="Select PDF Files"
             onFilesSelected={handleFiles}
             error={error}
           />
         ) : (
           <div className="rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 p-6 space-y-5">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-200 dark:border-slate-800">
               <div>
                 <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-                  {file.name}
+                  {files.length === 1 ? files[0].name : `${files.length} PDF files queued`}
                 </h3>
                 <p className="text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400">
-                  Input size: {formatBytes(file.size)}
+                  Total size: {formatBytes(files.reduce((acc, f) => acc + f.size, 0))}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setFile(null);
-                  setResult(null);
-                  setError(null);
-                }}
-                className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs text-rose-500"
-              >
-                Change file
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => addInputRef.current?.click()}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 text-xs font-medium flex items-center gap-1.5 whitespace-nowrap"
+                >
+                  <FilePlus2 className="w-3.5 h-3.5" /> Add PDFs
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFiles([]);
+                    setResults([]);
+                    setOutputs([]);
+                    setError(null);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs text-rose-500 whitespace-nowrap"
+                >
+                  Clear all
+                </button>
+              </div>
             </div>
+
+            {files.length > 1 && (
+              <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                {files.map((f, idx) => (
+                  <div
+                    key={`${f.name}-${idx}`}
+                    className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate">
+                        {f.name}
+                      </div>
+                      <div className="text-[11px] font-mono tabular-nums text-slate-500">
+                        {formatBytes(f.size)}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFiles((prev) => prev.filter((_, i) => i !== idx));
+                        setResults([]);
+                        setOutputs([]);
+                      }}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500"
+                      title="Remove file"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               {(
@@ -146,7 +232,8 @@ export const RepairPdfWorkspace: React.FC = () => {
                   type="button"
                   onClick={() => {
                     setMode(opt.id);
-                    setResult(null);
+                    setResults([]);
+                    setOutputs([]);
                   }}
                   className={`p-4 rounded-xl border text-left transition ${
                     mode === opt.id
@@ -177,46 +264,37 @@ export const RepairPdfWorkspace: React.FC = () => {
               </div>
             )}
 
-            {result && (
+            {outputs.length > 0 && (
               <div className="space-y-4">
-                <div className="rounded-xl bg-emerald-500/8 border border-emerald-500/25 p-4 flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-start gap-3">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                        Recovered {result.recoveredPages} page
-                        {result.recoveredPages === 1 ? '' : 's'}
-                      </p>
-                      <p className="text-xs font-mono tabular-nums text-slate-600 dark:text-slate-300 mt-0.5">
-                        {formatBytes(result.originalSize)} → {formatBytes(result.repairedSize)} ·{' '}
-                        {result.strategy === 'structural'
-                          ? 'Structural Rebuild'
-                          : 'Deep Visual Recovery'}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleDownload}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5"
-                  >
-                    <Download className="w-4 h-4" /> Download Repaired PDF
-                  </button>
-                </div>
+                <MultiOutputDownloadPanel
+                  title={
+                    outputs.length === 1
+                      ? `Repaired PDF ready (${totalRecoveredPages} pages recovered)`
+                      : `${outputs.length} Repaired PDFs ready (${totalRecoveredPages} pages total)`
+                  }
+                  zipFilename="repaired-pdfs.zip"
+                  items={outputs}
+                  onClear={() => {
+                    setOutputs([]);
+                    setResults([]);
+                  }}
+                />
 
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-1.5">
-                  <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                    Recovery diagnostics
-                  </div>
-                  {result.log.map((entry, idx) => (
-                    <div
-                      key={idx}
-                      className="text-xs font-mono text-slate-700 dark:text-slate-300"
-                    >
-                      {idx + 1}. {entry}
+                {results.length === 1 && (
+                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-1.5">
+                    <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                      Recovery diagnostics
                     </div>
-                  ))}
-                </div>
+                    {results[0].report.log.map((entry, idx) => (
+                      <div
+                        key={idx}
+                        className="text-xs font-mono text-slate-700 dark:text-slate-300"
+                      >
+                        {idx + 1}. {entry}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -234,6 +312,12 @@ export const RepairPdfWorkspace: React.FC = () => {
 
           <div className="space-y-2.5 text-xs">
             <div className="flex justify-between">
+              <span className="text-slate-500 dark:text-slate-400">Files queued</span>
+              <span className="font-mono font-medium tabular-nums text-slate-900 dark:text-slate-100">
+                {files.length}
+              </span>
+            </div>
+            <div className="flex justify-between">
               <span className="text-slate-500 dark:text-slate-400">Recovery mode</span>
               <span className="font-mono font-medium text-slate-900 dark:text-slate-100">
                 {mode === 'auto' ? 'Auto Rebuild' : 'Deep Visual'}
@@ -242,28 +326,25 @@ export const RepairPdfWorkspace: React.FC = () => {
             <div className="flex justify-between">
               <span className="text-slate-500 dark:text-slate-400">Recovered pages</span>
               <span className="font-mono font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
-                {result ? result.recoveredPages : '—'}
+                {results.length > 0 ? totalRecoveredPages : '—'}
               </span>
             </div>
           </div>
 
           <button
             type="button"
-            onClick={result ? handleDownload : handleRepair}
-            disabled={!file || repairing}
-            className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 text-white font-medium text-sm shadow-sm flex items-center justify-center gap-2 transition"
+            onClick={handleRepair}
+            disabled={files.length === 0 || repairing}
+            className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 text-white font-medium text-sm shadow-sm flex items-center justify-center gap-2 transition whitespace-nowrap"
           >
             {repairing ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" /> Repairing...
               </>
-            ) : result ? (
-              <>
-                <Download className="w-4 h-4" /> Download Repaired PDF
-              </>
             ) : (
               <>
-                <Wrench className="w-4 h-4" /> Repair PDF Now
+                <Wrench className="w-4 h-4" />{' '}
+                {files.length > 1 ? `Repair All (${files.length})` : 'Repair PDF Now'}
               </>
             )}
           </button>
@@ -271,15 +352,20 @@ export const RepairPdfWorkspace: React.FC = () => {
       </div>
 
       <FloatingActionBar
-        visible={Boolean(file)}
-        summary={result ? `${result.recoveredPages} pages recovered` : 'Ready to repair'}
-        detail={file?.name}
-        actionLabel={repairing ? 'Repairing...' : result ? 'Download PDF' : 'Repair Now'}
+        visible={files.length > 0}
+        summary={
+          outputs.length > 0
+            ? `${outputs.length} repaired · ${totalRecoveredPages} pages`
+            : `${files.length} file${files.length === 1 ? '' : 's'} ready`
+        }
+        detail={files.length === 1 ? files[0].name : 'Batch recovery mode'}
+        actionLabel={repairing ? 'Repairing...' : files.length > 1 ? 'Repair All' : 'Repair Now'}
         busy={repairing}
-        onAction={result ? handleDownload : handleRepair}
+        onAction={handleRepair}
         onReset={() => {
-          setFile(null);
-          setResult(null);
+          setFiles([]);
+          setResults([]);
+          setOutputs([]);
         }}
       />
     </div>
@@ -422,7 +508,7 @@ export const OcrPdfWorkspace: React.FC = () => {
                   Ready to recognize text locally with Tesseract.js
                 </p>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-                  First run downloads the English OCR model into browser cache (~4 MB) so subsequent OCR runs work offline.
+                  First run caches the English OCR model locally (~4 MB) for fast subsequent text recognition.
                 </p>
                 <button
                   type="button"
@@ -785,10 +871,13 @@ export const RotatePdfWorkspace: React.FC = () => {
    23. ADD PAGE NUMBERS WORKSPACE
 ============================================================================ */
 export const AddPageNumbersWorkspace: React.FC = () => {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [activeIdx, setActiveIdx] = useState(0);
   const [thumbs, setThumbs] = useState<PageThumbnail[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [outputs, setOutputs] = useState<GeneratedFileItem[]>([]);
+  const addInputRef = useRef<HTMLInputElement>(null);
   const [options, setOptions] = useState<PageNumberOptions>({
     position: 'bottom-center',
     format: 'page-n-of-total',
@@ -799,31 +888,60 @@ export const AddPageNumbersWorkspace: React.FC = () => {
     colorHex: '#1E293B',
   });
 
-  const handleFiles = async (files: File[]) => {
-    const selected = files[0];
-    if (!selected) return;
+  const loadPreview = async (target: File) => {
     setLoading(true);
     try {
-      setFile(selected);
-      const rendered = await renderPdfThumbnails(selected, 0.55);
+      const rendered = await renderPdfThumbnails(target, 0.55);
       setThumbs(rendered);
     } finally {
       setLoading(false);
     }
   };
 
+  const handleFiles = async (incoming: File[]) => {
+    if (incoming.length === 0) return;
+    const next = [...files, ...incoming];
+    setFiles(next);
+    setOutputs([]);
+    if (files.length === 0) {
+      setActiveIdx(0);
+      await loadPreview(incoming[0]);
+    }
+  };
+
+  const handleSelectPreview = async (idx: number) => {
+    if (!files[idx]) return;
+    setActiveIdx(idx);
+    await loadPreview(files[idx]);
+  };
+
   const handleExport = async () => {
-    if (!file) return;
+    if (files.length === 0) return;
     setSaving(true);
     try {
-      const bytes = await addPageNumbersToPdf(file, options);
-      const base = file.name.replace(/\.pdf$/i, '');
-      triggerDownload(bytes, `${base}-numbered.pdf`);
+      const generated: GeneratedFileItem[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const bytes = await addPageNumbersToPdf(f, options);
+        const base = f.name.replace(/\.pdf$/i, '');
+        generated.push({
+          id: `num-${i}-${Date.now()}`,
+          filename: `${base}-numbered.pdf`,
+          subtitle: `${options.position} · start #${options.startNumber}`,
+          sizeBytes: bytes.byteLength,
+          data: bytes,
+        });
+      }
+      setOutputs(generated);
+      if (generated.length === 1) {
+        triggerDownload(generated[0].data, generated[0].filename);
+      }
     } finally {
       setSaving(false);
     }
   };
 
+  const activeFile = files[activeIdx] || files[0] || null;
   const previewPage = thumbs[options.skipFirstPage && thumbs.length > 1 ? 1 : 0];
   const previewLabel = formatPageNumberLabel(
     options.startNumber,
@@ -842,36 +960,99 @@ export const AddPageNumbersWorkspace: React.FC = () => {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-28">
-      <div className="lg:col-span-8">
-        {!file ? (
+      <input
+        ref={addInputRef}
+        type="file"
+        multiple
+        accept="application/pdf,.pdf"
+        className="hidden"
+        onChange={(e) => {
+          handleFiles(Array.from(e.target.files || []));
+          e.target.value = '';
+        }}
+      />
+
+      <div className="lg:col-span-8 space-y-4">
+        {files.length === 0 ? (
           <WorkspaceDropzone
-            title="Drop a PDF to stamp customizable page numbers"
-            subtitle="Pick placement on the page grid, choose numbering format, skip cover page, and preview live."
+            multiple
+            title="Drop one or more PDFs to stamp customizable page numbers"
+            subtitle="Pick placement on the page grid, choose numbering format, skip cover page, and stamp single or batch PDFs."
+            selectLabel="Select PDF Files"
             onFilesSelected={handleFiles}
             loading={loading}
           />
         ) : (
           <div className="rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 p-5 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200 dark:border-slate-800">
               <div>
                 <h3 className="text-base font-semibold text-slate-900 dark:text-white">
                   Live placement preview
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-                  {file.name} · {thumbs.length} pages
+                  {activeFile?.name} · {thumbs.length} pages
+                  {files.length > 1 ? ` · Batch of ${files.length} PDFs` : ''}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setFile(null);
-                  setThumbs([]);
-                }}
-                className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs text-rose-500"
-              >
-                Change file
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => addInputRef.current?.click()}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 text-xs font-medium flex items-center gap-1.5 whitespace-nowrap"
+                >
+                  <FilePlus2 className="w-3.5 h-3.5" /> Add PDFs
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFiles([]);
+                    setThumbs([]);
+                    setOutputs([]);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs text-rose-500 whitespace-nowrap"
+                >
+                  Clear all
+                </button>
+              </div>
             </div>
+
+            {files.length > 1 && (
+              <div className="flex flex-wrap gap-1.5">
+                {files.map((f, idx) => (
+                  <button
+                    key={`${f.name}-${idx}`}
+                    type="button"
+                    onClick={() => handleSelectPreview(idx)}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border transition ${
+                      idx === activeIdx
+                        ? 'border-indigo-500 bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 font-medium'
+                        : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    <span className="max-w-[140px] truncate">{f.name}</span>
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const next = files.filter((_, i) => i !== idx);
+                        setFiles(next);
+                        setOutputs([]);
+                        if (next.length === 0) {
+                          setThumbs([]);
+                        } else if (idx === activeIdx) {
+                          setActiveIdx(0);
+                          loadPreview(next[0]);
+                        }
+                      }}
+                      className="text-slate-400 hover:text-rose-500 ml-0.5"
+                    >
+                      ×
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             {previewPage && (
               <div className="flex justify-center py-2">
@@ -892,6 +1073,19 @@ export const AddPageNumbersWorkspace: React.FC = () => {
                   </span>
                 </div>
               </div>
+            )}
+
+            {outputs.length > 0 && (
+              <MultiOutputDownloadPanel
+                title={
+                  outputs.length === 1
+                    ? 'Numbered PDF ready'
+                    : `${outputs.length} Numbered PDFs ready`
+                }
+                zipFilename="numbered-pdfs.zip"
+                items={outputs}
+                onClear={() => setOutputs([])}
+              />
             )}
           </div>
         )}
@@ -1009,23 +1203,31 @@ export const AddPageNumbersWorkspace: React.FC = () => {
           <button
             type="button"
             onClick={handleExport}
-            disabled={!file || saving}
-            className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 text-white font-medium text-sm shadow-sm flex items-center justify-center gap-2 transition"
+            disabled={files.length === 0 || saving}
+            className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 text-white font-medium text-sm shadow-sm flex items-center justify-center gap-2 transition whitespace-nowrap"
           >
             <Download className="w-4 h-4" />
-            {saving ? 'Stamping Numbers...' : 'Add Page Numbers & Download'}
+            {saving
+              ? 'Stamping Numbers...'
+              : files.length > 1
+                ? `Stamp All (${files.length} PDFs)`
+                : 'Add Page Numbers & Download'}
           </button>
         </div>
       </div>
 
       <FloatingActionBar
-        visible={Boolean(file)}
-        summary={previewLabel}
+        visible={files.length > 0}
+        summary={files.length > 1 ? `${files.length} PDFs · ${previewLabel}` : previewLabel}
         detail={options.position}
-        actionLabel={saving ? 'Stamping...' : 'Download PDF'}
+        actionLabel={saving ? 'Stamping...' : files.length > 1 ? 'Stamp All' : 'Download PDF'}
         busy={saving}
         onAction={handleExport}
-        onReset={() => setFile(null)}
+        onReset={() => {
+          setFiles([]);
+          setThumbs([]);
+          setOutputs([]);
+        }}
       />
     </div>
   );
@@ -1035,37 +1237,48 @@ export const AddPageNumbersWorkspace: React.FC = () => {
    24. ADD WATERMARK WORKSPACE (Text or Image)
 ============================================================================ */
 export const AddWatermarkWorkspace: React.FC = () => {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [activeIdx, setActiveIdx] = useState(0);
   const [thumbs, setThumbs] = useState<PageThumbnail[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [outputs, setOutputs] = useState<GeneratedFileItem[]>([]);
   const imgInputRef = useRef<HTMLInputElement>(null);
+  const addInputRef = useRef<HTMLInputElement>(null);
 
   const [options, setOptions] = useState<WatermarkOptions>({
     type: 'text',
     text: 'CONFIDENTIAL',
     fontSize: 48,
-    colorHex: '#6366F1',
+    colorHex: '#0A84FF',
     opacity: 0.25,
     angle: -35,
     placement: 'center',
     imageScale: 0.4,
   });
 
-  const handleFiles = async (files: File[]) => {
-    const selected = files[0];
-    if (!selected) return;
+  const loadPreview = async (target: File) => {
     setLoading(true);
     try {
-      setFile(selected);
-      setThumbs(await renderPdfThumbnails(selected, 0.55));
+      setThumbs(await renderPdfThumbnails(target, 0.55));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleWatermarkImage = (files: FileList | null) => {
-    const imgFile = files?.[0];
+  const handleFiles = async (incoming: File[]) => {
+    if (incoming.length === 0) return;
+    const next = [...files, ...incoming];
+    setFiles(next);
+    setOutputs([]);
+    if (files.length === 0) {
+      setActiveIdx(0);
+      await loadPreview(incoming[0]);
+    }
+  };
+
+  const handleWatermarkImage = (fileList: FileList | null) => {
+    const imgFile = fileList?.[0];
     if (!imgFile) return;
     const reader = new FileReader();
     reader.onload = () => {
@@ -1079,12 +1292,29 @@ export const AddWatermarkWorkspace: React.FC = () => {
   };
 
   const handleApply = async () => {
-    if (!file) return;
+    if (files.length === 0) return;
     setSaving(true);
     try {
-      const bytes = await addWatermarkToPdf(file, options);
-      const base = file.name.replace(/\.pdf$/i, '');
-      triggerDownload(bytes, `${base}-watermarked.pdf`);
+      const generated: GeneratedFileItem[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const bytes = await addWatermarkToPdf(f, options);
+        const base = f.name.replace(/\.pdf$/i, '');
+        generated.push({
+          id: `wm-${i}-${Date.now()}`,
+          filename: `${base}-watermarked.pdf`,
+          subtitle:
+            options.type === 'text'
+              ? `"${options.text || 'CONFIDENTIAL'}" · ${Math.round(options.opacity * 100)}%`
+              : `Image watermark · ${Math.round(options.opacity * 100)}%`,
+          sizeBytes: bytes.byteLength,
+          data: bytes,
+        });
+      }
+      setOutputs(generated);
+      if (generated.length === 1) {
+        triggerDownload(generated[0].data, generated[0].filename);
+      }
     } finally {
       setSaving(false);
     }
@@ -1092,36 +1322,102 @@ export const AddWatermarkWorkspace: React.FC = () => {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-28">
-      <div className="lg:col-span-8">
-        {!file ? (
+      <input
+        ref={addInputRef}
+        type="file"
+        multiple
+        accept="application/pdf,.pdf"
+        className="hidden"
+        onChange={(e) => {
+          handleFiles(Array.from(e.target.files || []));
+          e.target.value = '';
+        }}
+      />
+
+      <div className="lg:col-span-8 space-y-4">
+        {files.length === 0 ? (
           <WorkspaceDropzone
-            title="Drop a PDF to stamp a text or image watermark"
-            subtitle="Customize text, logo image, opacity, rotation angle, and tiled or centered placement."
+            multiple
+            title="Drop one or more PDFs to stamp a text or image watermark"
+            subtitle="Customize text, logo image, opacity, rotation angle, and stamp single or multiple PDFs at once."
+            selectLabel="Select PDF Files"
             onFilesSelected={handleFiles}
             loading={loading}
           />
         ) : (
           <div className="rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 p-5 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200 dark:border-slate-800">
               <div>
                 <h3 className="text-base font-semibold text-slate-900 dark:text-white">
                   Live watermark preview
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
                   Applied across all {thumbs.length} page(s)
+                  {files.length > 1 ? ` · Batch of ${files.length} PDFs` : ''}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setFile(null);
-                  setThumbs([]);
-                }}
-                className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs text-rose-500"
-              >
-                Change file
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => addInputRef.current?.click()}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 text-xs font-medium flex items-center gap-1.5 whitespace-nowrap"
+                >
+                  <FilePlus2 className="w-3.5 h-3.5" /> Add PDFs
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFiles([]);
+                    setThumbs([]);
+                    setOutputs([]);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs text-rose-500 whitespace-nowrap"
+                >
+                  Clear all
+                </button>
+              </div>
             </div>
+
+            {files.length > 1 && (
+              <div className="flex flex-wrap gap-1.5">
+                {files.map((f, idx) => (
+                  <button
+                    key={`${f.name}-${idx}`}
+                    type="button"
+                    onClick={() => {
+                      setActiveIdx(idx);
+                      loadPreview(f);
+                    }}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border transition ${
+                      idx === activeIdx
+                        ? 'border-indigo-500 bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 font-medium'
+                        : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    <span className="max-w-[140px] truncate">{f.name}</span>
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const next = files.filter((_, i) => i !== idx);
+                        setFiles(next);
+                        setOutputs([]);
+                        if (next.length === 0) {
+                          setThumbs([]);
+                        } else if (idx === activeIdx) {
+                          setActiveIdx(0);
+                          loadPreview(next[0]);
+                        }
+                      }}
+                      className="text-slate-400 hover:text-rose-500 ml-0.5"
+                    >
+                      ×
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             {thumbs[0] && (
               <div className="flex justify-center py-2">
@@ -1181,6 +1477,19 @@ export const AddWatermarkWorkspace: React.FC = () => {
                   </div>
                 </div>
               </div>
+            )}
+
+            {outputs.length > 0 && (
+              <MultiOutputDownloadPanel
+                title={
+                  outputs.length === 1
+                    ? 'Watermarked PDF ready'
+                    : `${outputs.length} Watermarked PDFs ready`
+                }
+                zipFilename="watermarked-pdfs.zip"
+                items={outputs}
+                onClear={() => setOutputs([])}
+              />
             )}
           </div>
         )}
@@ -1324,24 +1633,38 @@ export const AddWatermarkWorkspace: React.FC = () => {
           <button
             type="button"
             onClick={handleApply}
-            disabled={!file || saving || (options.type === 'image' && !options.imageDataUrl)}
-            className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 text-white font-medium text-sm shadow-sm flex items-center justify-center gap-2 transition"
+            disabled={files.length === 0 || saving || (options.type === 'image' && !options.imageDataUrl)}
+            className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 text-white font-medium text-sm shadow-sm flex items-center justify-center gap-2 transition whitespace-nowrap"
           >
             <Download className="w-4 h-4" />
-            {saving ? 'Applying Watermark...' : 'Stamp Watermark & Download'}
+            {saving
+              ? 'Applying Watermark...'
+              : files.length > 1
+                ? `Watermark All (${files.length} PDFs)`
+                : 'Stamp Watermark & Download'}
           </button>
         </div>
       </div>
 
       <FloatingActionBar
-        visible={Boolean(file)}
-        summary={options.type === 'text' ? options.text || 'Text' : 'Image stamp'}
+        visible={files.length > 0}
+        summary={
+          files.length > 1
+            ? `${files.length} PDFs · ${options.type === 'text' ? options.text || 'Text' : 'Logo'}`
+            : options.type === 'text'
+              ? options.text || 'Text'
+              : 'Image stamp'
+        }
         detail={`${Math.round(options.opacity * 100)}% opacity · ${options.angle}°`}
-        actionLabel={saving ? 'Stamping...' : 'Download PDF'}
+        actionLabel={saving ? 'Stamping...' : files.length > 1 ? 'Stamp All' : 'Download PDF'}
         disabled={options.type === 'image' && !options.imageDataUrl}
         busy={saving}
         onAction={handleApply}
-        onReset={() => setFile(null)}
+        onReset={() => {
+          setFiles([]);
+          setThumbs([]);
+          setOutputs([]);
+        }}
       />
     </div>
   );

@@ -913,7 +913,7 @@ const DEFAULT_HTML_SNIPPET = `<style>
 </ul>
 <h2>2. Tier Allocation</h2>
 <table>
-  <tr><th>Environment</th><th>Max Local File Size</th><th>Offline Support</th></tr>
+  <tr><th>Environment</th><th>Max Local File Size</th><th>Local Processing</th></tr>
   <tr><td>Desktop Browser</td><td>250 MB</td><td>Full</td></tr>
   <tr><td>Mobile Web</td><td>100 MB</td><td>Full</td></tr>
 </table>`;
@@ -1097,7 +1097,7 @@ const DEFAULT_MARKDOWN = `# KAAGAZ Architecture Notes
 ## Core Design Principles
 
 - **100% Client-Side Execution**: Powered by pdf-lib, PDF.js, jsPDF, Mammoth, SheetJS, docx, and PptxGenJS.
-- **Offline Capability**: Every engine asset bundles directly into the browser runtime.
+- **Local Execution**: Every engine asset bundles directly into the browser runtime.
 - **Deterministic Outputs**: Clean typography, margins, and archival XMP metadata.
 
 ## Supported Format Matrix

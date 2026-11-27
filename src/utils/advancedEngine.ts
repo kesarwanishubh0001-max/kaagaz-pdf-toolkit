@@ -165,7 +165,7 @@ export async function createSampleScannedPdf(): Promise<File> {
       'Department: Engineering & Legal Compliance',
       'All scanned receipts and signed paper contracts processed in KAAGAZ',
       'remain 100% private inside local device memory with zero uploads.',
-      'Reference Code: KGZ-8841-OFFLINE',
+      'Reference Code: KGZ-8841-LOCAL',
     ],
   ];
 

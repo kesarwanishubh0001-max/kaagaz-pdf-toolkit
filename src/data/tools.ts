@@ -98,6 +98,19 @@ export interface PdfToolMeta {
   featured?: boolean;
 }
 
+const BADGE_BLUE =
+  'bg-black/[0.04] dark:bg-white/[0.05] ring-1 ring-inset ring-black/[0.06] dark:ring-white/[0.08] text-[#0071E3] dark:text-[#0A84FF]';
+const BADGE_EMERALD =
+  'bg-black/[0.04] dark:bg-white/[0.05] ring-1 ring-inset ring-black/[0.06] dark:ring-white/[0.08] text-emerald-600 dark:text-[#30D158]';
+const BADGE_AMBER =
+  'bg-black/[0.04] dark:bg-white/[0.05] ring-1 ring-inset ring-black/[0.06] dark:ring-white/[0.08] text-amber-600 dark:text-[#FF9F0A]';
+const BADGE_ROSE =
+  'bg-black/[0.04] dark:bg-white/[0.05] ring-1 ring-inset ring-black/[0.06] dark:ring-white/[0.08] text-rose-600 dark:text-[#FF453A]';
+const BADGE_CYAN =
+  'bg-black/[0.04] dark:bg-white/[0.05] ring-1 ring-inset ring-black/[0.06] dark:ring-white/[0.08] text-sky-600 dark:text-[#64D2FF]';
+const BADGE_PURPLE =
+  'bg-black/[0.04] dark:bg-white/[0.05] ring-1 ring-inset ring-black/[0.06] dark:ring-white/[0.08] text-purple-600 dark:text-[#BF5AF2]';
+
 export const PDF_TOOLS: PdfToolMeta[] = [
   // [1] ORGANIZE PDF (6 Tools)
   {
@@ -110,22 +123,20 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     category: 'Organize',
     shortcut: '1',
     iconName: 'Layers',
-    badgeClass:
-      'bg-indigo-500/12 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300',
+    badgeClass: BADGE_BLUE,
     featured: true,
   },
   {
     id: 'split-pdf',
     number: 2,
     title: 'Split PDF',
-    subtitle: 'Extract ranges or burst to ZIP',
+    subtitle: 'Multiple ranges, fixed intervals & burst',
     description:
-      'Separate one page or a whole set of pages into independent PDF files or a ZIP archive.',
+      'Define multiple custom ranges (e.g. 1–10, 11–20), fixed intervals, or burst pages into separate PDFs or a ZIP.',
     category: 'Organize',
     shortcut: '2',
     iconName: 'Scissors',
-    badgeClass:
-      'bg-violet-500/12 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300',
+    badgeClass: BADGE_PURPLE,
     featured: true,
   },
   {
@@ -138,21 +149,19 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     category: 'Organize',
     shortcut: '3',
     iconName: 'Trash2',
-    badgeClass:
-      'bg-rose-500/12 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300',
+    badgeClass: BADGE_ROSE,
   },
   {
     id: 'extract-pages',
     number: 4,
     title: 'Extract Pages',
-    subtitle: 'Save specific pages standalone',
+    subtitle: 'Multiple page sets or single PDF',
     description:
-      'Cherry-pick specific pages from thumbnails and export them as a new PDF or separate files in a ZIP.',
+      'Cherry-pick pages into one or multiple extraction sets and download individually, separately, or as a ZIP.',
     category: 'Organize',
     shortcut: '4',
     iconName: 'FileOutput',
-    badgeClass:
-      'bg-sky-500/12 text-sky-600 dark:bg-sky-500/15 dark:text-sky-300',
+    badgeClass: BADGE_CYAN,
   },
   {
     id: 'organize-pdf',
@@ -164,8 +173,7 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     category: 'Organize',
     shortcut: '5',
     iconName: 'LayoutGrid',
-    badgeClass:
-      'bg-emerald-500/12 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300',
+    badgeClass: BADGE_EMERALD,
     featured: true,
   },
   {
@@ -178,8 +186,7 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     category: 'Organize',
     shortcut: '6',
     iconName: 'Camera',
-    badgeClass:
-      'bg-amber-500/12 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300',
+    badgeClass: BADGE_AMBER,
   },
 
   // [2] OPTIMIZE PDF (3 Tools)
@@ -187,14 +194,13 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     id: 'compress-pdf',
     number: 7,
     title: 'Compress PDF',
-    subtitle: 'Extreme, Recommended & Less presets',
+    subtitle: 'Batch compression across 3 presets',
     description:
-      'Reduce PDF file size locally while maintaining optimal visual quality across three presets.',
+      'Reduce single or multiple PDF file sizes locally while maintaining optimal visual quality across three presets.',
     category: 'Optimize',
     shortcut: '7',
     iconName: 'Minimize2',
-    badgeClass:
-      'bg-fuchsia-500/12 text-fuchsia-600 dark:bg-fuchsia-500/15 dark:text-fuchsia-300',
+    badgeClass: BADGE_PURPLE,
     featured: true,
   },
   {
@@ -203,12 +209,11 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     title: 'Repair PDF',
     subtitle: 'Recover damaged PDF structures',
     description:
-      'Fix damaged or corrupted PDF cross-references and recover readable pages into a clean file.',
+      'Fix damaged or corrupted PDF cross-references and recover readable pages across one or multiple files.',
     category: 'Optimize',
     shortcut: '8',
     iconName: 'Wrench',
-    badgeClass:
-      'bg-orange-500/12 text-orange-600 dark:bg-orange-500/15 dark:text-orange-300',
+    badgeClass: BADGE_AMBER,
   },
   {
     id: 'ocr-pdf',
@@ -220,8 +225,7 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     category: 'Optimize',
     shortcut: '9',
     iconName: 'ScanText',
-    badgeClass:
-      'bg-indigo-500/12 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300',
+    badgeClass: BADGE_BLUE,
     featured: true,
   },
 
@@ -237,8 +241,7 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     conversionDirection: 'to-pdf',
     shortcut: 'I',
     iconName: 'Image',
-    badgeClass:
-      'bg-indigo-500/12 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300',
+    badgeClass: BADGE_BLUE,
   },
   {
     id: 'word-to-pdf',
@@ -246,13 +249,12 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     title: 'Word to PDF',
     subtitle: 'Convert .docx & .txt locally',
     description:
-      'Parse Word (.docx) or plain text files locally via Mammoth with formatted typography preview and PDF export.',
+      'Parse Word (.docx) or plain text files locally with formatted typography preview and PDF export.',
     category: 'Convert',
     conversionDirection: 'to-pdf',
     shortcut: 'D',
     iconName: 'FileText',
-    badgeClass:
-      'bg-blue-500/12 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300',
+    badgeClass: BADGE_CYAN,
   },
   {
     id: 'powerpoint-to-pdf',
@@ -265,8 +267,7 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     conversionDirection: 'to-pdf',
     shortcut: 'P',
     iconName: 'Presentation',
-    badgeClass:
-      'bg-orange-500/12 text-orange-600 dark:bg-orange-500/15 dark:text-orange-300',
+    badgeClass: BADGE_AMBER,
   },
   {
     id: 'excel-to-pdf',
@@ -274,13 +275,12 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     title: 'Excel to PDF',
     subtitle: 'Spreadsheets & CSV tables',
     description:
-      'Parse .xlsx workbooks and .csv datasets with SheetJS, switch sheets, and render formatted PDF tables.',
+      'Parse .xlsx workbooks and .csv datasets with sheet switching and formatted PDF table export.',
     category: 'Convert',
     conversionDirection: 'to-pdf',
     shortcut: 'E',
     iconName: 'Table',
-    badgeClass:
-      'bg-emerald-500/12 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300',
+    badgeClass: BADGE_EMERALD,
   },
   {
     id: 'html-to-pdf',
@@ -293,8 +293,7 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     conversionDirection: 'to-pdf',
     shortcut: 'H',
     iconName: 'Code2',
-    badgeClass:
-      'bg-cyan-500/12 text-cyan-600 dark:bg-cyan-500/15 dark:text-cyan-300',
+    badgeClass: BADGE_CYAN,
   },
   {
     id: 'markdown-to-pdf',
@@ -307,8 +306,7 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     conversionDirection: 'to-pdf',
     shortcut: 'M',
     iconName: 'FileCode',
-    badgeClass:
-      'bg-violet-500/12 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300',
+    badgeClass: BADGE_PURPLE,
   },
 
   // [4] CONVERT FROM PDF (6 Tools)
@@ -323,8 +321,7 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     conversionDirection: 'from-pdf',
     shortcut: 'J',
     iconName: 'FileImage',
-    badgeClass:
-      'bg-amber-500/12 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300',
+    badgeClass: BADGE_AMBER,
   },
   {
     id: 'pdf-to-png',
@@ -337,8 +334,7 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     conversionDirection: 'from-pdf',
     shortcut: 'N',
     iconName: 'Images',
-    badgeClass:
-      'bg-teal-500/12 text-teal-600 dark:bg-teal-500/15 dark:text-teal-300',
+    badgeClass: BADGE_EMERALD,
   },
   {
     id: 'pdf-to-word',
@@ -346,13 +342,12 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     title: 'PDF to Word',
     subtitle: 'Generate editable .docx file',
     description:
-      'Extract text lines and structured paragraphs via PDF.js and generate a real downloadable .docx Word file.',
+      'Extract text lines and structured paragraphs and generate a clean downloadable .docx Word document.',
     category: 'Convert',
     conversionDirection: 'from-pdf',
     shortcut: 'W',
     iconName: 'FileType',
-    badgeClass:
-      'bg-blue-500/12 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300',
+    badgeClass: BADGE_BLUE,
   },
   {
     id: 'pdf-to-powerpoint',
@@ -360,13 +355,12 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     title: 'PDF to PowerPoint',
     subtitle: 'Export .pptx slide deck',
     description:
-      'Convert every PDF page into a widescreen slide inside a downloadable .pptx presentation via PptxGenJS.',
+      'Convert every PDF page into a widescreen slide inside a downloadable .pptx presentation.',
     category: 'Convert',
     conversionDirection: 'from-pdf',
     shortcut: 'V',
     iconName: 'MonitorPlay',
-    badgeClass:
-      'bg-orange-500/12 text-orange-600 dark:bg-orange-500/15 dark:text-orange-300',
+    badgeClass: BADGE_AMBER,
   },
   {
     id: 'pdf-to-excel',
@@ -379,8 +373,7 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     conversionDirection: 'from-pdf',
     shortcut: 'X',
     iconName: 'Sheet',
-    badgeClass:
-      'bg-emerald-500/12 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300',
+    badgeClass: BADGE_EMERALD,
   },
   {
     id: 'pdf-to-pdfa',
@@ -393,8 +386,7 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     conversionDirection: 'from-pdf',
     shortcut: 'A',
     iconName: 'ShieldCheck',
-    badgeClass:
-      'bg-purple-500/12 text-purple-600 dark:bg-purple-500/15 dark:text-purple-300',
+    badgeClass: BADGE_PURPLE,
   },
 
   // [5] EDIT PDF (5 Tools)
@@ -408,34 +400,31 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     category: 'Edit PDF',
     shortcut: 'R',
     iconName: 'RotateCw',
-    badgeClass:
-      'bg-sky-500/12 text-sky-600 dark:bg-sky-500/15 dark:text-sky-300',
+    badgeClass: BADGE_CYAN,
   },
   {
     id: 'add-page-numbers',
     number: 23,
     title: 'Add Page Numbers',
-    subtitle: 'Custom position, format & range',
+    subtitle: 'Custom position, format & batch',
     description:
-      'Insert customizable page numbers with position grid, format templates, cover-page skip, and typography controls.',
+      'Insert customizable page numbers across one or multiple PDFs with position grid, templates, and cover-page skip.',
     category: 'Edit PDF',
     shortcut: '#',
     iconName: 'Hash',
-    badgeClass:
-      'bg-indigo-500/12 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300',
+    badgeClass: BADGE_BLUE,
   },
   {
     id: 'add-watermark',
     number: 24,
     title: 'Add Watermark',
-    subtitle: 'Text or image stamps with angle',
+    subtitle: 'Text or image stamps with batch',
     description:
-      'Stamp custom text or image watermarks across pages with live opacity, angle, color, and tiling controls.',
+      'Stamp custom text or image watermarks across one or multiple PDFs with opacity, angle, and tiling controls.',
     category: 'Edit PDF',
     shortcut: 'T',
     iconName: 'Stamp',
-    badgeClass:
-      'bg-violet-500/12 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300',
+    badgeClass: BADGE_PURPLE,
   },
   {
     id: 'crop-pdf',
@@ -447,8 +436,7 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     category: 'Edit PDF',
     shortcut: 'C',
     iconName: 'Crop',
-    badgeClass:
-      'bg-teal-500/12 text-teal-600 dark:bg-teal-500/15 dark:text-teal-300',
+    badgeClass: BADGE_EMERALD,
   },
   {
     id: 'edit-pdf',
@@ -460,8 +448,7 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     category: 'Edit PDF',
     shortcut: 'Z',
     iconName: 'PenLine',
-    badgeClass:
-      'bg-fuchsia-500/12 text-fuchsia-600 dark:bg-fuchsia-500/15 dark:text-fuchsia-300',
+    badgeClass: BADGE_ROSE,
     featured: true,
   },
 
@@ -476,21 +463,19 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     category: 'Security',
     shortcut: 'U',
     iconName: 'Unlock',
-    badgeClass:
-      'bg-emerald-500/12 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300',
+    badgeClass: BADGE_EMERALD,
   },
   {
     id: 'protect-pdf',
     number: 28,
     title: 'Protect PDF',
-    subtitle: 'Encrypt with password & rights',
+    subtitle: 'Batch encrypt with password & rights',
     description:
-      'Encrypt PDF files locally with user and owner passwords plus granular print, copy, and edit permissions.',
+      'Encrypt one or multiple PDF files locally with user/owner passwords plus print, copy, and edit permissions.',
     category: 'Security',
     shortcut: 'L',
     iconName: 'Lock',
-    badgeClass:
-      'bg-indigo-500/12 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300',
+    badgeClass: BADGE_BLUE,
     featured: true,
   },
   {
@@ -503,8 +488,7 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     category: 'Security',
     shortcut: 'S',
     iconName: 'PenTool',
-    badgeClass:
-      'bg-violet-500/12 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300',
+    badgeClass: BADGE_PURPLE,
     featured: true,
   },
   {
@@ -517,8 +501,7 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     category: 'Security',
     shortcut: 'B',
     iconName: 'EyeOff',
-    badgeClass:
-      'bg-rose-500/12 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300',
+    badgeClass: BADGE_ROSE,
   },
 
   // [7] WORKFLOWS & ADVANCED UTILITIES (3 Tools)
@@ -532,34 +515,31 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     category: 'Workflows',
     shortcut: 'G',
     iconName: 'GitCompare',
-    badgeClass:
-      'bg-cyan-500/12 text-cyan-600 dark:bg-cyan-500/15 dark:text-cyan-300',
+    badgeClass: BADGE_CYAN,
   },
   {
     id: 'flatten-pdf',
     number: 32,
     title: 'Flatten PDF',
-    subtitle: 'Lock forms, annotations & layers',
+    subtitle: 'Batch lock forms, annotations & layers',
     description:
-      'Merge interactive form fields, annotations, and visual layers into static, uneditable PDF pages.',
+      'Merge interactive form fields, annotations, and visual layers into static, uneditable PDFs in batch.',
     category: 'Workflows',
     shortcut: 'F',
     iconName: 'Layers2',
-    badgeClass:
-      'bg-amber-500/12 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300',
+    badgeClass: BADGE_AMBER,
   },
   {
     id: 'custom-workflows',
     number: 33,
     title: 'Custom Workflows',
-    subtitle: 'Chain tools into 1-click pipelines',
+    subtitle: 'Chain tools across multiple PDFs',
     description:
-      'Chain Rotate, Watermark, Page Numbers, Compress, Flatten, and PDF/A steps into an automated pipeline.',
+      'Chain Rotate, Watermark, Page Numbers, Compress, Flatten, and PDF/A steps across one or multiple PDFs.',
     category: 'Workflows',
     shortcut: 'Y',
     iconName: 'Workflow',
-    badgeClass:
-      'bg-indigo-500/12 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300',
+    badgeClass: BADGE_BLUE,
     featured: true,
   },
 ];

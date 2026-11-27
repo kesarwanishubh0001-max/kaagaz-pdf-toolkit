@@ -4,7 +4,7 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { jsPDF } from 'jspdf';
 import JSZip from 'jszip';
 
-// Bundle the PDF.js worker directly with Vite for 100% offline execution
+// Bundle the PDF.js worker directly with Vite for fast client-side execution
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 export interface PageThumbnail {
@@ -174,7 +174,7 @@ export async function createSamplePdfFile(
     });
 
     page.drawText(
-      `Offline client-side test document — Page ${i + 1} of ${pageCount}.`,
+      `Client-side sample document — Page ${i + 1} of ${pageCount}.`,
       {
         x: 190,
         y: height - 216,
@@ -459,6 +459,119 @@ export async function splitPagesToZip(
   return await zip.generateAsync({ type: 'blob' });
 }
 
+export interface SplitRangeSpec {
+  id: string;
+  label: string;
+  from: number;
+  to: number;
+}
+
+export interface GeneratedSplitOutput {
+  id: string;
+  filename: string;
+  pageRangeLabel: string;
+  pageCount: number;
+  bytes: Uint8Array;
+}
+
+/**
+ * TOOL 2C: Split a single PDF into multiple independent PDFs by custom page ranges
+ */
+export async function splitPdfByRanges(
+  file: File,
+  ranges: SplitRangeSpec[]
+): Promise<GeneratedSplitOutput[]> {
+  const bytes = await file.arrayBuffer();
+  const sourcePdf = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  const totalPages = sourcePdf.getPageCount();
+  const baseName = file.name.replace(/\.pdf$/i, '');
+  const outputs: GeneratedSplitOutput[] = [];
+
+  for (let i = 0; i < ranges.length; i++) {
+    const r = ranges[i];
+    const start = Math.max(1, Math.min(totalPages, Math.min(r.from, r.to)));
+    const end = Math.max(1, Math.min(totalPages, Math.max(r.from, r.to)));
+    const indices: number[] = [];
+    for (let p = start; p <= end; p++) {
+      indices.push(p - 1);
+    }
+    if (indices.length === 0) continue;
+
+    const outDoc = await PDFDocument.create();
+    const copied = await outDoc.copyPages(sourcePdf, indices);
+    copied.forEach((p) => outDoc.addPage(p));
+    const outBytes = await outDoc.save();
+    const rangeStr = start === end ? `p${start}` : `p${start}-${end}`;
+    outputs.push({
+      id: r.id,
+      filename: `${baseName}-split-${i + 1}-${rangeStr}.pdf`,
+      pageRangeLabel: start === end ? `Page ${start}` : `Pages ${start}–${end}`,
+      pageCount: indices.length,
+      bytes: outBytes,
+    });
+  }
+
+  return outputs;
+}
+
+/**
+ * Compute fixed-size split ranges (e.g. every N pages: 1-10, 11-20, 21-24)
+ */
+export function buildFixedRanges(
+  totalPages: number,
+  pagesPerSplit: number
+): SplitRangeSpec[] {
+  const step = Math.max(1, Math.floor(pagesPerSplit));
+  const ranges: SplitRangeSpec[] = [];
+  let idx = 1;
+  for (let start = 1; start <= totalPages; start += step) {
+    const end = Math.min(totalPages, start + step - 1);
+    ranges.push({
+      id: `fixed-${idx}-${start}-${end}`,
+      label: `Split ${idx}`,
+      from: start,
+      to: end,
+    });
+    idx += 1;
+  }
+  return ranges;
+}
+
+/**
+ * Package any list of generated files into a downloadable ZIP archive
+ */
+export async function bundleOutputsToZip(
+  outputs: { filename: string; bytes: Uint8Array }[]
+): Promise<Blob> {
+  const zip = new JSZip();
+  const seen = new Map<string, number>();
+  for (const out of outputs) {
+    const count = seen.get(out.filename) || 0;
+    seen.set(out.filename, count + 1);
+    const finalName =
+      count === 0
+        ? out.filename
+        : out.filename.replace(/(\.[^.]+)$/, `-${count + 1}$1`);
+    zip.file(finalName, out.bytes);
+  }
+  return await zip.generateAsync({ type: 'blob' });
+}
+
+/**
+ * Staggered sequential download of multiple files directly to disk without needing to unzip
+ */
+export async function downloadFilesSequentially(
+  files: { filename: string; data: Uint8Array | Blob; mimeType?: string }[]
+): Promise<void> {
+  for (let i = 0; i < files.length; i++) {
+    const item = files[i];
+    triggerDownload(item.data, item.filename, item.mimeType || 'application/pdf');
+    if (i < files.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 260));
+    }
+  }
+}
+
 /**
  * TOOL 5: Organize PDF (Reorder, Duplicate, Rotate, Delete pages)
  */
@@ -677,7 +790,7 @@ export async function compressPdfLocally(
 }
 
 /**
- * Triggers a browser file download from a Uint8Array or Blob
+ * Triggers a file download (native Android Downloads/Kaagaz inside APK, or browser download)
  */
 export function triggerDownload(
   data: Uint8Array | Blob,
@@ -688,6 +801,32 @@ export function triggerDownload(
     data instanceof Blob
       ? data
       : new Blob([new Uint8Array(data)], { type: mimeType });
+
+  // Inside the Android APK WebView, save natively to Downloads/Kaagaz
+  const nativeBridge = (
+    window as Window & {
+      KaagazNative?: {
+        saveFileToDownloads?: (name: string, b64: string, mime: string) => string;
+      };
+    }
+  ).KaagazNative;
+
+  if (nativeBridge?.saveFileToDownloads) {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      const commaIdx = result.indexOf(',');
+      const base64 = commaIdx >= 0 ? result.slice(commaIdx + 1) : result;
+      try {
+        nativeBridge.saveFileToDownloads!(filename, base64, mimeType);
+      } catch {
+        // Ignore bridge failure and fallback below
+      }
+    };
+    reader.readAsDataURL(blob);
+    return;
+  }
+
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
