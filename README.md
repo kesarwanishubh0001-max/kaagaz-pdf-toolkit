@@ -7,7 +7,7 @@
 ## ✨ Key Features
 
 ### 🔒 1. Complete Online PDF Toolkit (All 33 Tools)
-Every PDF operation runs 100% locally in memory—no file uploads, zero cloud dependency, complete privacy:
+Every PDF operation runs 100% privately in no file uploads, zero cloud dependency, complete privacy:
 - **Organize PDF (6):** Merge PDF, Split PDF, Remove Pages, Extract Pages, Visual Organize PDF, Scan to PDF.
 - **Optimize PDF (3):** Compress PDF, Repair PDF, Offline OCR PDF (`tesseract.js`).
 - **Convert TO PDF (6):** JPG/PNG to PDF, Word (`.docx`) to PDF, PowerPoint (`.pptx`) to PDF, Excel (`.xlsx/.csv`) to PDF, HTML to PDF, Markdown to PDF.
@@ -15,9 +15,7 @@ Every PDF operation runs 100% locally in memory—no file uploads, zero cloud de
 - **Edit PDF (5):** Rotate PDF, Add Page Numbers, Add Watermark, Crop PDF, Edit/Annotate PDF.
 - **PDF Security (4):** Unlock PDF, Protect PDF, Sign PDF, Redact PDF.
 - **Workflows & Utilities (3):** Compare PDF, Flatten & Grayscale PDF, Custom Multi-Step Workflows.
-
-- **Smart A4 Printout Engine:** Live paginated A4 preview (`210mm × 297mm`) with **Compact Exam Paper Mode** and **2-Column Layout** to save up to 40% paper when printing (`Ctrl + P`).
-
+  
 ---
 
 ## 📜 License
