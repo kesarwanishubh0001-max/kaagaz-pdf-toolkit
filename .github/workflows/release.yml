@@ -26,14 +26,22 @@ jobs:
           npm install --legacy-peer-deps
           npm install --save-dev electron electron-builder --legacy-peer-deps
 
-      - name: Auto-Fix White Screen & Configure Offline Paths
+      - name: Fix Empty Root & Configure Offline Electron Build
         shell: node {0}
         run: |
           const fs = require('fs');
           const path = require('path');
 
+          // 1. Remove AI Studio online importmap from index.html
+          if (fs.existsSync('index.html')) {
+            let html = fs.readFileSync('index.html', 'utf8');
+            html = html.replace(/<script\s+type=["']importmap["'][\s\S]*?<\/script>/gi, '');
+            fs.writeFileSync('index.html', html);
+          }
+
+          // 2. Configure package.json
           const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-          pkg.version = '1.0.1';
+          pkg.version = '1.0.3';
           pkg.main = 'electron/main.cjs';
           pkg.build = {
             appId: 'com.kaagaz.pdftoolkit',
@@ -47,7 +55,7 @@ jobs:
           };
           fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
 
-          // Force relative base path in vite.config
+          // 3. Force relative base path in vite.config
           for (const cfg of ['vite.config.ts', 'vite.config.js']) {
             if (fs.existsSync(cfg)) {
               let content = fs.readFileSync(cfg, 'utf8');
@@ -60,13 +68,14 @@ jobs:
             }
           }
 
-          // Replace BrowserRouter with HashRouter in src files if present
-          function walkDir(dir) {
-            if (!fs.existsSync(dir)) return;
+          // 4. Scan ALL folders (not just src) to replace BrowserRouter with HashRouter
+          function walkAll(dir) {
             for (const file of fs.readdirSync(dir)) {
+              if (['node_modules', '.git', 'dist', 'release', 'electron'].includes(file)) continue;
               const full = path.join(dir, file);
-              if (fs.statSync(full).isDirectory()) walkDir(full);
-              else if (/\.(tsx|ts|jsx|js)$/.test(file)) {
+              if (fs.statSync(full).isDirectory()) {
+                walkAll(full);
+              } else if (/\.(tsx|ts|jsx|js)$/.test(file)) {
                 let code = fs.readFileSync(full, 'utf8');
                 if (code.includes('BrowserRouter')) {
                   code = code.replace(/BrowserRouter/g, 'HashRouter');
@@ -75,7 +84,7 @@ jobs:
               }
             }
           }
-          walkDir('src');
+          walkAll('.');
 
       - name: Build Web & Windows EXE
         env:
