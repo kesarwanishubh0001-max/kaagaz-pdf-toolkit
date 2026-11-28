@@ -1,19 +1,24 @@
 name: Build DMG
 
 on:
+  push:
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
-  build:
+  build-dmg:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
       - run: flutter pub get
+      - run: flutter config --enable-macos-desktop
+      - run: flutter create --platforms=macos .
       - run: flutter build macos --release
       - run: |
-          brew install create-dmg
-          create-dmg "App.dmg" "build/macos/Build/Products/Release/*.app"
+          mkdir -p dmg_folder
+          cp -r build/macos/Build/Products/Release/*.app dmg_folder/
+          hdiutil create -volname "App" -srcfolder dmg_folder -ov -format UDZO App.dmg
       - uses: actions/upload-artifact@v4
         with:
           name: Mac-DMG
