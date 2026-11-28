@@ -1,25 +1,70 @@
-name: Build DMG
+name: Build Kaagaz Mac DMG
 
 on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  build-dmg:
+  build-mac:
     runs-on: macos-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-      - run: flutter pub get
-      - run: flutter config --enable-macos-desktop
-      - run: flutter create --platforms=macos .
-      - run: flutter build macos --release
-      - run: |
-          mkdir -p dmg_folder
-          cp -r build/macos/Build/Products/Release/*.app dmg_folder/
-          hdiutil create -volname "App" -srcfolder dmg_folder -ov -format UDZO App.dmg
-      - uses: actions/upload-artifact@v4
+      - name: Checkout Code
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
         with:
-          name: Mac-DMG
-          path: App.dmg
+          node-version: 22
+
+      - name: Install Dependencies
+        run: |
+          npm install --legacy-peer-deps
+          npm install --save-dev electron electron-builder --legacy-peer-deps
+
+      - name: Prepare Web Build & Configure Electron
+        shell: node {0}
+        run: |
+          const fs = require('fs');
+
+          if (fs.existsSync('index.html')) {
+            let html = fs.readFileSync('index.html', 'utf8');
+            html = html.replace(/<script\s+type=["']importmap["'][\s\S]*?<\/script>/gi, '');
+            fs.writeFileSync('index.html', html);
+          }
+
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          pkg.version = '1.0.0';
+          pkg.main = 'electron/main.cjs';
+          pkg.build = {
+            appId: 'com.kaagaz.pdftoolkit',
+            productName: 'Kaagaz',
+            directories: { output: 'release' },
+            files: ['dist/**/*', 'electron/**/*', 'package.json'],
+            mac: {
+              target: ['dmg'],
+              identity: null
+            }
+          };
+          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
+
+      - name: Build Web & Mac DMG
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: |
+          npx vite build
+          npx electron-builder --mac dmg --publish never
+
+      - name: Publish Mac DMG to Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mac-v1.0.${{ github.run_number }}
+          name: Kaagaz Mac DMG v1.0.${{ github.run_number }} (Offline)
+          draft: false
+          prerelease: false
+          files: |
+            release/*.dmg
