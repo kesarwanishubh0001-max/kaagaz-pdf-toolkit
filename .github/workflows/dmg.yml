@@ -1,0 +1,20 @@
+name: Build DMG
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+      - run: flutter pub get
+      - run: flutter build macos --release
+      - run: |
+          brew install create-dmg
+          create-dmg "App.dmg" "build/macos/Build/Products/Release/*.app"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mac-DMG
+          path: App.dmg
