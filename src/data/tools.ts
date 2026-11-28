@@ -33,12 +33,13 @@ export type ToolId =
   | 'pdf-to-powerpoint'
   | 'pdf-to-excel'
   | 'pdf-to-pdfa'
-  // [5] Edit PDF (5)
+  // [5] Edit PDF (6)
   | 'rotate-pdf'
   | 'add-page-numbers'
   | 'add-watermark'
   | 'crop-pdf'
   | 'edit-pdf'
+  | 'invert-pdf'
   // [6] PDF Security (4)
   | 'unlock-pdf'
   | 'protect-pdf'
@@ -82,7 +83,8 @@ export type ToolIconName =
   | 'EyeOff'
   | 'GitCompare'
   | 'Layers2'
-  | 'Workflow';
+  | 'Workflow'
+  | 'Contrast';
 
 export interface PdfToolMeta {
   id: ToolId;
@@ -219,9 +221,9 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     id: 'ocr-pdf',
     number: 9,
     title: 'OCR PDF',
-    subtitle: 'Extract & embed searchable text',
+    subtitle: 'English & हिन्दी (Hindi) local OCR',
     description:
-      'Run in-browser Tesseract OCR to convert scanned PDFs and images into searchable, selectable text.',
+      'Run bundled Tesseract OCR in English, Hindi (हिन्दी), or bilingual mode to extract selectable text and build searchable PDFs with zero internet.',
     category: 'Optimize',
     shortcut: '9',
     iconName: 'ScanText',
@@ -449,6 +451,19 @@ export const PDF_TOOLS: PdfToolMeta[] = [
     shortcut: 'Z',
     iconName: 'PenLine',
     badgeClass: BADGE_ROSE,
+    featured: true,
+  },
+  {
+    id: 'invert-pdf',
+    number: 34,
+    title: 'Invert PDF',
+    subtitle: 'Dark mode & color inversion',
+    description:
+      'Convert white PDFs to eye-friendly Smart Dark Mode, pure RGB negative, or high-contrast monochrome for night reading or reverse-printing dark slides.',
+    category: 'Edit PDF',
+    shortcut: 'Q',
+    iconName: 'Contrast',
+    badgeClass: BADGE_PURPLE,
     featured: true,
   },
 

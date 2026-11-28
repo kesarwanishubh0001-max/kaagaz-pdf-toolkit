@@ -1,70 +1,101 @@
 const { app, BrowserWindow, shell } = require('electron');
-const path = require('path');
 const http = require('http');
 const fs = require('fs');
+const path = require('path');
+
+let localServer = null;
 
 const MIME_TYPES = {
-  '.html': 'text/html',
-  '.js': 'application/javascript',
-  '.mjs': 'application/javascript',
-  '.css': 'text/css',
-  '.json': 'application/json',
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
-  '.svg': 'image/svg+xml',
-  '.wasm': 'application/wasm',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
-  '.ttf': 'font/ttf'
+  '.ttf': 'font/ttf',
+  '.wasm': 'application/wasm',
+  // IMPORTANT: Serve .traineddata.gz as raw bytes (without Content-Encoding: gzip)
+  // because Tesseract.js decompresses .traineddata.gz directly in JS.
+  '.gz': 'application/octet-stream',
 };
 
-function startLocalServer(distDir) {
-  return new Promise((resolve) => {
+function startLocalDistServer(distDir) {
+  return new Promise((resolve, reject) => {
     const server = http.createServer((req, res) => {
-      const cleanUrl = req.url.split('?')[0].split('#')[0];
-      let filePath = path.join(distDir, cleanUrl === '/' ? 'index.html' : cleanUrl);
-
-      if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
-        filePath = path.join(distDir, 'index.html');
+      try {
+        const reqPath = decodeURIComponent((req.url || '/').split('?')[0]);
+        let targetPath = path.normalize(path.join(distDir, reqPath === '/' ? 'index.html' : reqPath));
+        if (!targetPath.startsWith(distDir)) {
+          res.writeHead(403);
+          res.end('Forbidden');
+          return;
+        }
+        if (!fs.existsSync(targetPath) || fs.statSync(targetPath).isDirectory()) {
+          targetPath = path.join(distDir, 'index.html');
+        }
+        const ext = path.extname(targetPath).toLowerCase();
+        const mime = MIME_TYPES[ext] || 'application/octet-stream';
+        res.writeHead(200, { 'Content-Type': mime });
+        fs.createReadStream(targetPath).pipe(res);
+      } catch {
+        res.writeHead(500);
+        res.end('Internal Error');
       }
-
-      const ext = path.extname(filePath).toLowerCase();
-      res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
-      fs.createReadStream(filePath).pipe(res);
     });
 
+    server.on('error', reject);
     server.listen(0, '127.0.0.1', () => {
-      resolve(server.address().port);
+      const address = server.address();
+      resolve({ server, port: address.port });
     });
   });
 }
 
-app.whenReady().then(async () => {
-  const distPath = path.join(__dirname, '../dist');
-  const port = await startLocalServer(distPath);
+async function createWindow() {
+  const distDir = path.join(__dirname, '../dist');
+  const { server, port } = await startLocalDistServer(distDir);
+  localServer = server;
 
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
-    title: 'Kaagaz',
+    title: 'KAAGAZ',
     autoHideMenuBar: true,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#08080A',
     webPreferences: {
       nodeIntegration: false,
-      contextIsolation: true
-    }
+      contextIsolation: true,
+    },
   });
 
   win.maximize();
-  win.loadURL(`http://127.0.0.1:${port}`);
+  await win.loadURL(`http://127.0.0.1:${port}/`);
 
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+  win.webContents.setWindowOpenHandler(({ url: extUrl }) => {
+    if (extUrl.startsWith('http://') || extUrl.startsWith('https://')) {
+      shell.openExternal(extUrl);
+    }
     return { action: 'deny' };
   });
-});
+}
+
+app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
+  if (localServer) {
+    try {
+      localServer.close();
+    } catch {
+      // ignore
+    }
+    localServer = null;
+  }
   if (process.platform !== 'darwin') app.quit();
 });

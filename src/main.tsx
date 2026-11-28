@@ -13,3 +13,19 @@ import App from './App.tsx';
 import './index.css';
 
 createRoot(document.getElementById('root')!).render(<App />);
+
+// Register local cache Service Worker on standard web deployments so the web app
+// and its bundled English + Hindi OCR models remain available without internet.
+if (
+  typeof window !== 'undefined' &&
+  'serviceWorker' in navigator &&
+  window.location.protocol.startsWith('http') &&
+  window.location.hostname !== '127.0.0.1' &&
+  !(window as Window & { KaagazNative?: unknown }).KaagazNative
+) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {
+      // Ignore SW registration failure in restricted sandboxes
+    });
+  });
+}

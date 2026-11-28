@@ -33,6 +33,7 @@ import {
   GitCompare,
   Layers2,
   Workflow,
+  Contrast,
 } from 'lucide-react';
 import { ToolIconName } from '../data/tools';
 
@@ -116,5 +117,7 @@ export const ToolIcon: React.FC<ToolIconProps> = ({
       return <Layers2 {...props} />;
     case 'Workflow':
       return <Workflow {...props} />;
+    case 'Contrast':
+      return <Contrast {...props} />;
   }
 };

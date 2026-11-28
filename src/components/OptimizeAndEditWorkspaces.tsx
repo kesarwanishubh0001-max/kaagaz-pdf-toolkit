@@ -22,6 +22,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FilePlus2,
+  Languages,
 } from 'lucide-react';
 import {
   PageThumbnail,
@@ -36,6 +37,7 @@ import {
   runOcrOnFile,
   buildSearchableOcrPdf,
   OcrPageResult,
+  OcrLanguage,
   rotatePdfPages,
   addPageNumbersToPdf,
   formatPageNumberLabel,
@@ -377,9 +379,11 @@ export const RepairPdfWorkspace: React.FC = () => {
 ============================================================================ */
 export const OcrPdfWorkspace: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
+  const [language, setLanguage] = useState<OcrLanguage>('eng');
   const [results, setResults] = useState<OcrPageResult[]>([]);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState({ status: '', pct: 0 });
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [buildingPdf, setBuildingPdf] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -388,23 +392,32 @@ export const OcrPdfWorkspace: React.FC = () => {
     if (!selected) return;
     setFile(selected);
     setResults([]);
+    setErrorMsg(null);
   };
 
   const handleLoadSampleScan = async () => {
     const sample = await createSampleScannedPdf();
     setFile(sample);
     setResults([]);
+    setErrorMsg(null);
   };
 
   const handleRunOcr = async () => {
     if (!file) return;
     setRunning(true);
-    setProgress({ status: 'Starting OCR...', pct: 5 });
+    setErrorMsg(null);
+    setProgress({ status: 'Starting local OCR engine...', pct: 5 });
     try {
-      const pages = await runOcrOnFile(file, 'eng', (status, pct) =>
+      const pages = await runOcrOnFile(file, language, (status, pct) =>
         setProgress({ status, pct })
       );
       setResults(pages);
+    } catch (err) {
+      setErrorMsg(
+        err instanceof Error
+          ? err.message
+          : 'OCR engine failed to process this file. Please try again.'
+      );
     } finally {
       setRunning(false);
     }
@@ -423,9 +436,10 @@ export const OcrPdfWorkspace: React.FC = () => {
   const handleDownloadTxt = () => {
     if (!file) return;
     const base = file.name.replace(/\.(pdf|png|jpe?g|webp)$/i, '');
+    // Prefix UTF-8 BOM so Hindi (Devanagari) renders properly in Windows Notepad & editors
     triggerDownload(
-      new Blob([fullText], { type: 'text/plain;charset=utf-8' }),
-      `${base}-ocr.txt`,
+      new Blob(['\uFEFF' + fullText], { type: 'text/plain;charset=utf-8' }),
+      `${base}-ocr-${language}.txt`,
       'text/plain'
     );
   };
@@ -501,14 +515,20 @@ export const OcrPdfWorkspace: React.FC = () => {
               </div>
             )}
 
+            {errorMsg && (
+              <div className="px-4 py-3 rounded-xl bg-rose-500/10 border border-rose-500/25 text-xs text-rose-600 dark:text-rose-400">
+                {errorMsg}
+              </div>
+            )}
+
             {!running && results.length === 0 && (
               <div className="py-10 text-center space-y-3">
                 <ScanText className="w-8 h-8 text-indigo-500 mx-auto" />
                 <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
-                  Ready to recognize text locally with Tesseract.js
+                  Ready to recognize text with built-in local Tesseract OCR
                 </p>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-                  First run caches the English OCR model locally (~4 MB) for fast subsequent text recognition.
+                  English and Hindi (हिन्दी) models are bundled locally inside KAAGAZ — works directly on Mobile, PC, and Web with zero external downloads.
                 </p>
                 <button
                   type="button"
@@ -568,8 +588,42 @@ export const OcrPdfWorkspace: React.FC = () => {
           <div className="flex items-center gap-2.5 pb-3 border-b border-slate-200 dark:border-slate-800">
             <ScanText className="w-4 h-4 text-indigo-500" />
             <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
-              OCR exports
+              OCR settings & exports
             </h4>
+          </div>
+
+          {/* Language Selector: English / Hindi / Bilingual */}
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+              <Languages className="w-3.5 h-3.5" strokeWidth={1.6} />
+              Document language
+            </label>
+            <div className="grid grid-cols-1 gap-1.5">
+              {(
+                [
+                  { id: 'eng', label: 'English', sub: 'Standard Latin script' },
+                  { id: 'hin', label: 'हिन्दी (Hindi)', sub: 'Devanagari script' },
+                  { id: 'eng+hin', label: 'English + हिन्दी', sub: 'Mixed bilingual documents' },
+                ] as { id: OcrLanguage; label: string; sub: string }[]
+              ).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  disabled={running}
+                  onClick={() => setLanguage(opt.id)}
+                  className={`flex items-center justify-between px-3 py-2 rounded-xl border text-left transition ${
+                    language === opt.id
+                      ? 'border-indigo-500 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
+                      : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
+                  }`}
+                >
+                  <span className="text-xs font-medium">{opt.label}</span>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                    {opt.sub}
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
 
           <button
@@ -595,23 +649,34 @@ export const OcrPdfWorkspace: React.FC = () => {
           </button>
 
           {results.length > 0 && (
-            <div className="grid grid-cols-2 gap-2">
+            <>
               <button
                 type="button"
-                onClick={handleCopyText}
-                className="py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 hover:border-indigo-500/50"
+                onClick={handleRunOcr}
+                disabled={running}
+                className="w-full py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 hover:border-indigo-500/50 transition"
               >
-                <Copy className="w-3.5 h-3.5" />
-                {copied ? 'Copied' : 'Copy text'}
+                <RefreshCw className="w-3.5 h-3.5" />
+                Re-run OCR ({language === 'eng' ? 'English' : language === 'hin' ? 'हिन्दी' : 'Eng + हिन्दी'})
               </button>
-              <button
-                type="button"
-                onClick={handleDownloadTxt}
-                className="py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 hover:border-indigo-500/50"
-              >
-                <Download className="w-3.5 h-3.5" /> Save .TXT
-              </button>
-            </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyText}
+                  className="py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 hover:border-indigo-500/50"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  {copied ? 'Copied' : 'Copy text'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadTxt}
+                  className="py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 hover:border-indigo-500/50"
+                >
+                  <Download className="w-3.5 h-3.5" /> Save .TXT
+                </button>
+              </div>
+            </>
           )}
         </div>
       </div>

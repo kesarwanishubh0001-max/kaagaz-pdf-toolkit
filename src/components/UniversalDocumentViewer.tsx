@@ -42,6 +42,7 @@ import {
   ShieldCheck,
   Folder,
   ArrowLeft,
+  Contrast,
 } from 'lucide-react';
 import {
   LoadedViewerDocument,
@@ -164,6 +165,7 @@ export const UniversalDocumentViewer: React.FC = () => {
   const [wordWrap, setWordWrap] = useState(true);
   const [copied, setCopied] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [invertView, setInvertView] = useState<'off' | 'smart' | 'pure'>('off');
 
   // Device storage & Recently Viewed state
   const isAndroid = useMemo(() => isAndroidNativeApp(), []);
@@ -1529,6 +1531,39 @@ export const UniversalDocumentViewer: React.FC = () => {
                   </button>
                 )}
 
+                {activeDoc &&
+                  ['pdf', 'word', 'image'].includes(activeDoc.kind) && (
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setInvertView((curr) =>
+                            curr === 'off'
+                              ? 'smart'
+                              : curr === 'smart'
+                                ? 'pure'
+                                : 'off'
+                          )
+                        }
+                        className={`px-2 py-1.5 rounded-lg border text-[11px] font-medium flex items-center gap-1.5 whitespace-nowrap transition ${
+                          invertView !== 'off'
+                            ? 'border-[#0A84FF]/45 bg-[#0A84FF]/12 text-[#0071E3] dark:text-[#0A84FF]'
+                            : 'border-black/[0.07] dark:border-white/[0.08] text-slate-500 hover:text-[#1D1D1F] dark:hover:text-white'
+                        }`}
+                        title="Invert document colors for dark reading (click to switch Off / Smart Dark / Pure Invert)"
+                      >
+                        <Contrast className="w-3.5 h-3.5 shrink-0" strokeWidth={1.7} />
+                        <span className="hidden sm:inline">
+                          {invertView === 'off'
+                            ? 'Invert'
+                            : invertView === 'smart'
+                              ? 'Dark Invert'
+                              : 'Pure Invert'}
+                        </span>
+                      </button>
+                    </div>
+                  )}
+
                 {supportsSearch && (
                   <button
                     type="button"
@@ -1698,7 +1733,13 @@ export const UniversalDocumentViewer: React.FC = () => {
                         <img
                           src={p.thumbUrl}
                           alt={`Page ${p.pageNumber}`}
-                          className="w-full rounded-md bg-white border border-black/[0.05]"
+                          className={`w-full rounded-md bg-white border border-black/[0.05] print:filter-none ${
+                            invertView === 'smart'
+                              ? 'invert-[0.92] hue-rotate-180 contrast-[1.04]'
+                              : invertView === 'pure'
+                                ? 'invert'
+                                : ''
+                          }`}
                         />
                         <div className="mt-1 text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
                           {p.pageNumber}
@@ -1777,7 +1818,13 @@ export const UniversalDocumentViewer: React.FC = () => {
                             <img
                               src={page.dataUrl}
                               alt={`${activeDoc.name} page ${page.pageNumber}`}
-                              className="w-full h-auto block"
+                              className={`w-full h-auto block transition-[filter] duration-150 print:filter-none ${
+                                invertView === 'smart'
+                                  ? 'invert-[0.92] hue-rotate-180 contrast-[1.04]'
+                                  : invertView === 'pure'
+                                    ? 'invert'
+                                    : ''
+                              }`}
                             />
                           </div>
                           <span className="mt-2 text-[11px] font-mono tabular-nums text-slate-500">
@@ -1792,7 +1839,13 @@ export const UniversalDocumentViewer: React.FC = () => {
                 {/* 2. WORD (.DOCX) VIEWER */}
                 {activeDoc.kind === 'word' && (
                   <div
-                    className="mx-auto rounded-2xl bg-white text-[#1D1D1F] shadow-lg shadow-black/10 border border-black/[0.08] p-8 sm:p-12 transition-all"
+                    className={`mx-auto rounded-2xl bg-white text-[#1D1D1F] shadow-lg shadow-black/10 border border-black/[0.08] p-8 sm:p-12 transition-all print:filter-none ${
+                      invertView === 'smart'
+                        ? 'invert-[0.92] hue-rotate-180'
+                        : invertView === 'pure'
+                          ? 'invert'
+                          : ''
+                    }`}
                     style={{
                       maxWidth: `${Math.round(780 * (zoom / 100))}px`,
                       fontSize: `${Math.round(15 * (zoom / 100))}px`,
@@ -1992,7 +2045,13 @@ export const UniversalDocumentViewer: React.FC = () => {
                           flipX ? -1 : 1
                         })`,
                       }}
-                      className="max-w-full max-h-[560px] object-contain rounded-lg shadow-lg transition-transform duration-150"
+                      className={`max-w-full max-h-[560px] object-contain rounded-lg shadow-lg transition-all duration-150 print:filter-none ${
+                        invertView === 'smart'
+                          ? 'invert-[0.92] hue-rotate-180 contrast-[1.04]'
+                          : invertView === 'pure'
+                            ? 'invert'
+                            : ''
+                      }`}
                     />
                   </div>
                 )}

@@ -197,9 +197,11 @@ export async function createSampleScannedPdf(): Promise<File> {
   });
 }
 
+export type OcrLanguage = 'eng' | 'hin' | 'eng+hin';
+
 export async function runOcrOnFile(
   file: File,
-  language = 'eng',
+  language: OcrLanguage = 'eng',
   onProgress?: (status: string, progressPct: number) => void
 ): Promise<OcrPageResult[]> {
   const pageImages: { pageNumber: number; dataUrl: string; width: number; height: number }[] = [];
@@ -223,7 +225,7 @@ export async function runOcrOnFile(
     const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
-      const vp = page.getViewport({ scale: 1.8 });
+      const vp = page.getViewport({ scale: 2.0 });
       const canvas = document.createElement('canvas');
       canvas.width = vp.width;
       canvas.height = vp.height;
@@ -242,11 +244,23 @@ export async function runOcrOnFile(
     }
   }
 
-  onProgress?.('Initializing Tesseract OCR engine...', 15);
+  onProgress?.('Loading local Tesseract OCR engine...', 15);
+  const ocrBase = new URL('./ocr/', window.location.href).href;
   const worker = await createWorker(language, 1, {
+    workerPath: `${ocrBase}worker.min.js`,
+    corePath: `${ocrBase}core`,
+    langPath: `${ocrBase}tessdata`,
+    workerBlobURL: false,
+    cacheMethod: 'none',
+    gzip: true,
     logger: (m) => {
       if (m.status === 'recognizing text' && typeof m.progress === 'number') {
-        onProgress?.(`Recognizing text (${Math.round(m.progress * 100)}%)...`, 15 + Math.round(m.progress * 80));
+        onProgress?.(
+          `Recognizing text (${Math.round(m.progress * 100)}%)...`,
+          15 + Math.round(m.progress * 80)
+        );
+      } else if (m.status === 'loading language traineddata') {
+        onProgress?.('Loading bundled language model...', 12);
       }
     },
   });
@@ -1357,4 +1371,214 @@ export async function runCustomWorkflowPipeline(
   }
 
   return currentBytes;
+}
+
+/* ============================================================================
+   TOOL 34: INVERT PDF (Dark Mode & Color Inversion Engine)
+============================================================================ */
+export type PdfInvertMode = 'smart-dark' | 'classic-invert' | 'grayscale-dark';
+
+export interface InvertPdfOptions {
+  mode: PdfInvertMode;
+  dpi: 110 | 150 | 220;
+  pageRangeText: string; // empty or "all" means all pages
+}
+
+function parseInvertPageSet(rangeText: string, totalPages: number): Set<number> {
+  const trimmed = rangeText.trim().toLowerCase();
+  if (!trimmed || trimmed === 'all') {
+    const all = new Set<number>();
+    for (let i = 1; i <= totalPages; i++) all.add(i);
+    return all;
+  }
+  const set = new Set<number>();
+  const parts = trimmed.split(',').map((s) => s.trim()).filter(Boolean);
+  for (const part of parts) {
+    if (part.includes('-')) {
+      const [aRaw, bRaw] = part.split('-').map((n) => parseInt(n.trim(), 10));
+      if (!Number.isNaN(aRaw) && !Number.isNaN(bRaw)) {
+        const start = Math.max(1, Math.min(aRaw, bRaw));
+        const end = Math.min(totalPages, Math.max(aRaw, bRaw));
+        for (let p = start; p <= end; p++) set.add(p);
+      }
+    } else {
+      const single = parseInt(part, 10);
+      if (!Number.isNaN(single) && single >= 1 && single <= totalPages) {
+        set.add(single);
+      }
+    }
+  }
+  if (set.size === 0) {
+    for (let i = 1; i <= totalPages; i++) set.add(i);
+  }
+  return set;
+}
+
+function applyPixelInversion(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  mode: PdfInvertMode
+) {
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const d = imageData.data;
+
+  if (mode === 'classic-invert') {
+    for (let i = 0; i < d.length; i += 4) {
+      d[i] = 255 - d[i];
+      d[i + 1] = 255 - d[i + 1];
+      d[i + 2] = 255 - d[i + 2];
+    }
+  } else if (mode === 'grayscale-dark') {
+    for (let i = 0; i < d.length; i += 4) {
+      const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      // Invert luminance and gently boost contrast on deep obsidian background
+      let inv = 255 - lum;
+      inv = Math.min(255, Math.max(14, Math.round((inv - 128) * 1.12 + 128)));
+      d[i] = inv;
+      d[i + 1] = inv;
+      d[i + 2] = inv;
+    }
+  } else {
+    // smart-dark: invert lightness while preserving original color hues (RGB -> HSL -> invert L -> RGB)
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i] / 255;
+      const g = d[i + 1] / 255;
+      const b = d[i + 2] / 255;
+
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      let h = 0;
+      let s = 0;
+      const l = (max + min) / 2;
+
+      if (max !== min) {
+        const delta = max - min;
+        s = l > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+        switch (max) {
+          case r:
+            h = (g - b) / delta + (g < b ? 6 : 0);
+            break;
+          case g:
+            h = (b - r) / delta + 2;
+            break;
+          default:
+            h = (r - g) / delta + 4;
+            break;
+        }
+        h /= 6;
+      }
+
+      // Map white paper (l=1) to soft dark charcoal (0.09) and black ink (l=0) to crisp off-white (0.93)
+      const invL = 0.09 + (1 - l) * 0.84;
+
+      if (s === 0) {
+        const val = Math.round(invL * 255);
+        d[i] = val;
+        d[i + 1] = val;
+        d[i + 2] = val;
+      } else {
+        const q = invL < 0.5 ? invL * (1 + s) : invL + s - invL * s;
+        const p = 2 * invL - q;
+        const hue2rgb = (tIn: number) => {
+          let t = tIn;
+          if (t < 0) t += 1;
+          if (t > 1) t -= 1;
+          if (t < 1 / 6) return p + (q - p) * 6 * t;
+          if (t < 1 / 2) return q;
+          if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+          return p;
+        };
+        d[i] = Math.round(hue2rgb(h + 1 / 3) * 255);
+        d[i + 1] = Math.round(hue2rgb(h) * 255);
+        d[i + 2] = Math.round(hue2rgb(h - 1 / 3) * 255);
+      }
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+}
+
+export async function renderInvertedPreviewPair(
+  file: File,
+  mode: PdfInvertMode,
+  pageNumber = 1
+): Promise<{ originalUrl: string; invertedUrl: string; pageCount: number }> {
+  const buffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
+  const clampedPage = Math.min(Math.max(1, pageNumber), pdf.numPages);
+  const page = await pdf.getPage(clampedPage);
+  const vp = page.getViewport({ scale: 1.15 });
+
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(vp.width);
+  canvas.height = Math.round(vp.height);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    return { originalUrl: '', invertedUrl: '', pageCount: pdf.numPages };
+  }
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport: vp, canvas }).promise;
+  const originalUrl = canvas.toDataURL('image/jpeg', 0.88);
+
+  applyPixelInversion(ctx, canvas.width, canvas.height, mode);
+  const invertedUrl = canvas.toDataURL('image/jpeg', 0.9);
+
+  return { originalUrl, invertedUrl, pageCount: pdf.numPages };
+}
+
+export async function invertPdfDocument(
+  file: File,
+  options: InvertPdfOptions,
+  onProgress?: (page: number, total: number) => void
+): Promise<Uint8Array> {
+  const buffer = await file.arrayBuffer();
+  const pdfJsDoc = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
+  const totalPages = pdfJsDoc.numPages;
+  const targetPages = parseInvertPageSet(options.pageRangeText, totalPages);
+
+  // Load original doc so untouched pages can be copied losslessly
+  const origDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
+  const outDoc = await PDFDocument.create();
+  const scale = options.dpi / 72;
+
+  for (let i = 1; i <= totalPages; i++) {
+    onProgress?.(i, totalPages);
+
+    if (!targetPages.has(i)) {
+      const [copied] = await outDoc.copyPages(origDoc, [i - 1]);
+      outDoc.addPage(copied);
+      continue;
+    }
+
+    const page = await pdfJsDoc.getPage(i);
+    const baseVp = page.getViewport({ scale: 1 });
+    const vp = page.getViewport({ scale });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(vp.width);
+    canvas.height = Math.round(vp.height);
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: ctx, viewport: vp, canvas }).promise;
+      applyPixelInversion(ctx, canvas.width, canvas.height, options.mode);
+    }
+
+    const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    const jpegBytes = await fetch(jpegDataUrl).then((r) => r.arrayBuffer());
+    const embedded = await outDoc.embedJpg(jpegBytes);
+    const outPage = outDoc.addPage([baseVp.width, baseVp.height]);
+    outPage.drawImage(embedded, {
+      x: 0,
+      y: 0,
+      width: baseVp.width,
+      height: baseVp.height,
+    });
+  }
+
+  outDoc.setProducer('KAAGAZ Invert PDF Engine');
+  return await outDoc.save();
 }

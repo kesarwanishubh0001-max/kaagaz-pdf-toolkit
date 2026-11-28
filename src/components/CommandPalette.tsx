@@ -107,7 +107,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Jump to any of the 33 KAAGAZ PDF tools..."
+            placeholder="Jump to any of the 34 KAAGAZ PDF tools..."
             className="w-full bg-transparent text-sm text-slate-900 dark:text-[#F5F5F7] placeholder-slate-400 focus:outline-none"
           />
           <kbd className="px-2 py-0.5 text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-black/[0.04] dark:bg-white/[0.06] rounded border border-black/[0.06] dark:border-white/[0.08] shrink-0">

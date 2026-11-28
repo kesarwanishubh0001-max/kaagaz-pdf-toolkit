@@ -76,6 +76,7 @@ import {
   FlattenPdfWorkspace,
   CustomWorkflowsWorkspace,
 } from './components/SecurityAndWorkflowWorkspaces';
+import { InvertPdfWorkspace } from './components/InvertPdfWorkspace';
 
 const DEFAULT_PINNED: ToolId[] = [
   'split-pdf',
@@ -387,6 +388,8 @@ export default function App() {
         return <FlattenPdfWorkspace />;
       case 'custom-workflows':
         return <CustomWorkflowsWorkspace />;
+      case 'invert-pdf':
+        return <InvertPdfWorkspace />;
     }
   };
 
@@ -737,7 +740,7 @@ export default function App() {
                 </span>
                 <span className="text-slate-400 hidden sm:inline">·</span>
                 <span className="text-xs text-slate-500 dark:text-slate-400 hidden sm:inline truncate">
-                  33 Private PDF Tools
+                  34 Private PDF Tools
                 </span>
               </div>
             )}
@@ -838,7 +841,7 @@ export default function App() {
                     KAAGAZ Studio
                   </h1>
                   <p className="text-sm sm:text-[15px] text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
-                    33 precision PDF tools and a Universal Document Viewer to read, split, merge, organize, optimize, convert, edit, and secure documents directly in your browser.
+                    34 precision PDF tools and a Universal Document Viewer to read, split, merge, organize, optimize, convert, edit, and secure documents directly in your browser.
                   </p>
                 </div>
 
@@ -983,7 +986,7 @@ export default function App() {
                       }}
                       className="px-4 py-2 rounded-xl bg-[#0071E3] dark:bg-[#0A84FF] text-white text-xs font-medium"
                     >
-                      View all 33 tools
+                      View all 34 tools
                     </button>
                     <button
                       type="button"

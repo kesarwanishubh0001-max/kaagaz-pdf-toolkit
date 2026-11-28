@@ -11,6 +11,8 @@
         "@fontsource/plus-jakarta-sans": "^5.3.0",
         "@google/genai": "^2.4.0",
         "@tailwindcss/vite": "^4.3.3",
+        "@tesseract.js-data/eng": "^1.0.0",
+        "@tesseract.js-data/hin": "^1.0.0",
         "@vitejs/plugin-react": "^6.1.1",
         "docx": "^9.16.1",
         "dotenv": "^17.2.3",
@@ -228,6 +230,10 @@
     "@tailwindcss/oxide-win32-x64-msvc": ["@tailwindcss/oxide-win32-x64-msvc@4.3.5", "", { "os": "win32", "cpu": "x64" }, "sha512-XiKFfIy1RWe7qK4WqByxNW7Oz1/nkOy8o/BWhHminyV1PmpUd8Eedj5v2A8h2kpqeVlz6xRnwk9Fr/ZXNLcZfg=="],
 
     "@tailwindcss/vite": ["@tailwindcss/vite@4.3.5", "", { "dependencies": { "@tailwindcss/node": "4.3.5", "@tailwindcss/oxide": "4.3.5", "tailwindcss": "4.3.5" }, "peerDependencies": { "vite": "^5.2.0 || ^6 || ^7 || ^8" } }, "sha512-BCNiY0a1ZjdOHVqw7kyb7U72BwfMF3dfUuN+tQsLWky/J5JOI/r7abibglXfygrZhVO/3u3V+E25kkKTeMkXaQ=="],
+
+    "@tesseract.js-data/eng": ["@tesseract.js-data/eng@1.0.0", "", {}, "sha512-mbTumm6KQPUHyzTPQaF3ObXYnx0SqqfV2nabqFVQBwD6Kl7PhGSLSzOlfFTWy0P3BjghaSKA2W9GB19Jk+ZcTg=="],
+
+    "@tesseract.js-data/hin": ["@tesseract.js-data/hin@1.0.0", "", {}, "sha512-MB6WY6g4SAtrs+Xuyz5JDDsLFCykCwIESV7M9KkyxF71bxBqhLa8e7GJi5yGa/Wl6V4nuC7LWX/EMdSyTINTvg=="],
 
     "@types/body-parser": ["@types/body-parser@2.2.0", "", { "dependencies": { "@types/connect": "*", "@types/node": "*" } }, "sha512-2xqOfKcCjEVvPzOqRa3Db4+CzY45+urO0ib+EvtV5G8z2SRhjVsEI8C6fXZjd0gLEszk27Z3UTpSgTI5Nh5QTg=="],
 
