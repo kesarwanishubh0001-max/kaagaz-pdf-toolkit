@@ -38,7 +38,11 @@ jobs:
           }
 
           const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          pkg.name = 'kaagaz-pdf-toolkit';
           pkg.version = '1.0.0';
+          pkg.description = 'All-in-One Offline PDF Toolkit & Document Reader';
+          pkg.author = 'Kaagaz <support@kaagaz.local>';
+          pkg.homepage = 'https://github.com';
           pkg.main = 'electron/main.cjs';
           pkg.build = {
             appId: 'com.kaagaz.pdftoolkit',
@@ -47,12 +51,15 @@ jobs:
             files: ['dist/**/*', 'electron/**/*', 'package.json'],
             linux: {
               target: ['AppImage', 'deb'],
-              category: 'Office'
+              category: 'Office',
+              maintainer: 'Kaagaz <support@kaagaz.local>'
             }
           };
           fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
 
       - name: Build Web & Linux App
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
         run: |
           npx vite build
           npx electron-builder --linux AppImage deb --publish never
