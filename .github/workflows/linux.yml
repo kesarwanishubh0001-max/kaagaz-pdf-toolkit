@@ -1,0 +1,69 @@
+name: Build Kaagaz Linux App
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install Dependencies
+        run: |
+          npm install --legacy-peer-deps
+          npm install --save-dev electron electron-builder --legacy-peer-deps
+
+      - name: Prepare Web Build & Configure Electron
+        shell: node {0}
+        run: |
+          const fs = require('fs');
+
+          if (fs.existsSync('index.html')) {
+            let html = fs.readFileSync('index.html', 'utf8');
+            html = html.replace(/<script\s+type=["']importmap["'][\s\S]*?<\/script>/gi, '');
+            fs.writeFileSync('index.html', html);
+          }
+
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          pkg.version = '1.0.0';
+          pkg.main = 'electron/main.cjs';
+          pkg.build = {
+            appId: 'com.kaagaz.pdftoolkit',
+            productName: 'Kaagaz',
+            directories: { output: 'release' },
+            files: ['dist/**/*', 'electron/**/*', 'package.json'],
+            linux: {
+              target: ['AppImage', 'deb'],
+              category: 'Office'
+            }
+          };
+          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
+
+      - name: Build Web & Linux App
+        run: |
+          npx vite build
+          npx electron-builder --linux AppImage deb --publish never
+
+      - name: Publish Linux Build to Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: linux-v1.0.${{ github.run_number }}
+          name: Kaagaz Linux v1.0.${{ github.run_number }} (Offline)
+          draft: false
+          prerelease: false
+          files: |
+            release/*.AppImage
+            release/*.deb
