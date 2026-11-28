@@ -43,6 +43,15 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
+  // Never intercept SEO or site verification files
+  if (
+    url.pathname === '/sitemap.xml' ||
+    url.pathname === '/robots.txt' ||
+    /^\/google[a-z0-9]+\.html$/i.test(url.pathname)
+  ) {
+    return;
+  }
+
   // Navigation requests: network first with cached index.html fallback
   if (request.mode === 'navigate') {
     event.respondWith(
